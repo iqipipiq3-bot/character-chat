@@ -42,6 +42,7 @@ type GeminiGenerateContentResponse = {
 export async function POST(request: NextRequest) {
   try {
     const body = (await request.json()) as Partial<PostBody>;
+    console.log("[api/chat] request body", body);
     const characterId = body.character_id;
     const conversationId = body.conversation_id;
     const message = body.message?.trim();
@@ -91,10 +92,7 @@ export async function POST(request: NextRequest) {
     if (characterError) {
       return NextResponse.json({ error: characterError.message }, { status: 400 });
     }
-    if (
-      !character ||
-      (character.user_id !== user.id && !(character as any).is_public)
-    ) {
+    if (!character || (character.user_id !== user.id && !character.is_public)) {
       return NextResponse.json({ error: "Character not found." }, { status: 404 });
     }
 
@@ -207,130 +205,81 @@ ${userPersona}
     const apiKey = getGeminiApiKey();
     const modelId = character.model || "gemini-2.5-pro";
 
-    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:streamGenerateContent?key=${apiKey}`;
+    const geminiResponse = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent?key=${apiKey}`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          generationConfig: {
+            maxOutputTokens: 8000,
+            temperature: 0.95,
+            topP: 0.95,
+          },
+          safetySettings: [
+            { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" },
+            { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
+            { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
+            { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" },
+          ],
+          system_instruction: {
+            parts: [{ text: systemPrompt }],
+          },
+          contents: conversationParts.map((m) => ({
+            role: m.role,
+            parts: [{ text: m.content }],
+          })),
+        }),
+      }
+    );
 
-    const encoder = new TextEncoder();
-    let fullReply = "";
+    if (!geminiResponse.ok) {
+      const errorText = await geminiResponse.text();
+      return NextResponse.json(
+        { error: "Gemini API error", detail: errorText },
+        { status: 500 }
+      );
+    }
 
-    const stream = new ReadableStream<Uint8Array>({
-      async start(controller) {
-        try {
-          const geminiResponse = await fetch(apiUrl, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              generationConfig: {
-                maxOutputTokens: 8000,
-                temperature: 0.95,
-                topP: 0.95,
-              },
-              safetySettings: [
-                { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" },
-                { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
-                { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
-                { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" },
-              ],
-              system_instruction: {
-                parts: [{ text: systemPrompt }],
-              },
-              contents: conversationParts.map((m) => ({
-                role: m.role,
-                parts: [{ text: m.content }],
-              })),
-            }),
-          });
+    const geminiJson = (await geminiResponse.json()) as GeminiGenerateContentResponse;
+    console.log("[api/chat] gemini response", JSON.stringify(geminiJson, null, 2));
+    const parts = geminiJson.candidates?.[0]?.content?.parts ?? [];
+    const reply = parts
+      .map((p) => p.text)
+      .filter((t): t is string => typeof t === "string" && t.length > 0)
+      .join("");
 
-          if (!geminiResponse.ok || !geminiResponse.body) {
-            const errorText = await geminiResponse.text();
-            controller.enqueue(
-              encoder.encode("답변을 생성하지 못했습니다. 잠시 후 다시 시도해 주세요.")
-            );
-            controller.close();
-            console.error("Gemini stream error", errorText);
-            return;
-          }
+    const finalReply =
+      reply.trim() ||
+      "답변을 생성하지 못했습니다. 잠시 후 다시 시도해 주세요.";
 
-          const reader = geminiResponse.body.getReader();
-          const decoder = new TextDecoder();
-          let buffer = "";
-
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            buffer += decoder.decode(value, { stream: true });
-
-            let newlineIndex: number;
-            // streamGenerateContent는 JSON 줄 단위로 응답합니다.
-            while ((newlineIndex = buffer.indexOf("\n")) !== -1) {
-              const line = buffer.slice(0, newlineIndex).trim();
-              buffer = buffer.slice(newlineIndex + 1);
-              if (!line) continue;
-
-              try {
-                const json = JSON.parse(line) as GeminiGenerateContentResponse;
-                const parts = json.candidates?.[0]?.content?.parts ?? [];
-                const delta = parts
-                  .map((p) => p.text)
-                  .filter((t): t is string => typeof t === "string" && t.length > 0)
-                  .join("");
-                if (delta) {
-                  fullReply += delta;
-                  controller.enqueue(encoder.encode(delta));
-                }
-              } catch (err) {
-                console.error("Failed to parse Gemini stream line", err);
-              }
-            }
-          }
-
-          if (!fullReply.trim()) {
-            fullReply = "답변을 생성하지 못했습니다. 잠시 후 다시 시도해 주세요.";
-            controller.enqueue(encoder.encode(fullReply));
-          }
-
-          controller.close();
-
-          // 스트리밍이 끝난 뒤에 메시지를 저장합니다.
-          void (async () => {
-            const { error: insertError } = await supabase.from("messages").insert([
-              {
-                user_id: user.id,
-                character_id: characterId,
-                conversation_id: conversationId,
-                role: "user",
-                content: message,
-              },
-              {
-                user_id: user.id,
-                character_id: characterId,
-                conversation_id: conversationId,
-                role: "assistant",
-                content: fullReply,
-              },
-            ]);
-
-            if (insertError) {
-              console.error("Failed to insert messages", insertError.message);
-            }
-          })();
-        } catch (err) {
-          console.error("Gemini streaming error", err);
-          controller.enqueue(
-            encoder.encode("답변을 생성하지 못했습니다. 잠시 후 다시 시도해 주세요.")
-          );
-          controller.close();
-        }
+    const { error: insertError } = await supabase.from("messages").insert([
+      {
+        user_id: user.id,
+        character_id: characterId,
+        conversation_id: conversationId,
+        role: "user",
+        content: message,
       },
-    });
-
-    return new Response(stream, {
-      status: 200,
-      headers: {
-        "Content-Type": "text/plain; charset=utf-8",
+      {
+        user_id: user.id,
+        character_id: characterId,
+        conversation_id: conversationId,
+        role: "assistant",
+        content: finalReply,
       },
-    });
+    ]);
+
+    if (insertError) {
+      return NextResponse.json({ error: insertError.message }, { status: 400 });
+    }
+
+    const responseBody = { reply: finalReply };
+    console.log("[api/chat] response", responseBody);
+
+    return NextResponse.json(responseBody);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
     return NextResponse.json({ error: message }, { status: 500 });

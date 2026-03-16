@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { createSupabaseBrowserClient } from "../../lib/supabase";
 import ReactMarkdown from "react-markdown";
@@ -18,7 +18,21 @@ export default function ChatPage() {
   const params = useParams<{ conversationId: string }>();
   const conversationId = params.conversationId;
   // 여기서는 character_id와 conversation_id를 동일하게 사용합니다.
-  const characterId = useMemo(() => conversationId, [conversationId]);
+  const [characterId, setCharacterId] = useState<string | null>(null);
+
+  useEffect(() => {
+    async function loadConversation() {
+      const supabase = createSupabaseBrowserClient();
+      const { data, error } = await supabase
+        .from("conversations")
+        .select("character_id")
+        .eq("id", conversationId)
+        .maybeSingle();
+      if (error || !data) { setError("대화를 불러올 수 없습니다."); return; }
+      setCharacterId(data.character_id);
+    }
+    if (conversationId) void loadConversation();
+  }, [conversationId]);
 
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
@@ -122,7 +136,7 @@ export default function ChatPage() {
   async function handleSend(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const text = input.trim();
-    if (!text || loading) return;
+    if (!text || loading || !characterId) return;
 
     setLoading(true);
     setError(null);
@@ -133,55 +147,39 @@ export default function ChatPage() {
       content: text,
       created_at: new Date().toISOString(),
     };
-    const assistantId = `temp-assistant-${Date.now()}`;
-
-    setMessages((prev) => [
-      ...prev,
-      userMessage,
-      {
-        id: assistantId,
-        role: "assistant",
-        content: "",
-        created_at: new Date().toISOString(),
-      },
-    ]);
+    setMessages((prev) => [...prev, userMessage]);
     setInput("");
 
     try {
+      const requestBody = {
+        character_id: characterId,
+        conversation_id: conversationId,
+        message: text,
+      };
+      console.log("[chat] request body", requestBody);
+
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          character_id: characterId,
-          conversation_id: conversationId,
-          message: text,
-        }),
+        body: JSON.stringify(requestBody),
       });
-      if (!res.ok || !res.body) {
-        const msg = "메시지를 보내는 중 오류가 발생했습니다.";
+      const data = (await res.json()) as { reply?: string; error?: string };
+      console.log("[chat] response", data);
+
+      if (!res.ok || !data.reply) {
+        const msg = data.error ?? "메시지를 보내는 중 오류가 발생했습니다.";
         setError(msg);
         return;
       }
 
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
+      const assistantMessage: Message = {
+        id: `temp-assistant-${Date.now()}`,
+        role: "assistant",
+        content: data.reply,
+        created_at: new Date().toISOString(),
+      };
 
-      let done = false;
-
-      while (!done) {
-        const { value, done: doneReading } = await reader.read();
-        done = doneReading;
-        if (value) {
-          const chunk = decoder.decode(value, { stream: true });
-          if (chunk) {
-            setMessages((prev) =>
-              prev.map((m) =>
-                m.id === assistantId ? { ...m, content: (m.content ?? "") + chunk } : m
-              )
-            );
-          }
-        }
-      }
+      setMessages((prev) => [...prev, assistantMessage]);
     } catch (err) {
       const msg = err instanceof Error ? err.message : "네트워크 오류가 발생했습니다.";
       setError(msg);
