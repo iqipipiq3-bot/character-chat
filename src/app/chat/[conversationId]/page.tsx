@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { createSupabaseBrowserClient } from "../../lib/supabase";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -17,22 +17,99 @@ export default function ChatPage() {
   const router = useRouter();
   const params = useParams<{ conversationId: string }>();
   const conversationId = params.conversationId;
+  const searchParams = useSearchParams();
   // 여기서는 character_id와 conversation_id를 동일하게 사용합니다.
   const [characterId, setCharacterId] = useState<string | null>(null);
 
   useEffect(() => {
     async function loadConversation() {
       const supabase = createSupabaseBrowserClient();
+      const characterIdFromQuery = searchParams.get("characterId");
+      console.log("[chat] loadConversation start", {
+        conversationId,
+        characterIdFromQuery,
+      });
+
       const { data, error } = await supabase
         .from("conversations")
         .select("character_id")
         .eq("id", conversationId)
         .maybeSingle();
-      if (error || !data) { setError("대화를 불러올 수 없습니다."); return; }
+
+      if (error) {
+        console.error("[chat] loadConversation error", { conversationId, error });
+        setError("대화를 불러올 수 없습니다.");
+        return;
+      }
+
+      if (!data) {
+        // 아직 대화방이 없다면 새로 생성합니다 (대시보드에서 처음 진입한 경우 등).
+        try {
+          const {
+            data: { user },
+            error: userError,
+          } = await supabase.auth.getUser();
+
+          if (userError || !user) {
+            console.error("[chat] loadConversation getUser error", userError);
+            setError("대화를 불러올 수 없습니다.");
+            return;
+          }
+
+          // character_id는 우선 쿼리스트링에서, 없으면 URL 파라미터(conversationId)를 사용합니다.
+          const newCharacterId = characterIdFromQuery ?? (conversationId as string | null);
+
+          if (!newCharacterId) {
+            console.error("[chat] loadConversation missing character_id", {
+              conversationId,
+              characterIdFromQuery,
+            });
+            setError("대화를 불러올 수 없습니다.");
+            return;
+          }
+
+          // 중복 생성을 피하기 위해 upsert + onConflict 사용
+          const insertPayload = {
+            id: conversationId,
+            user_id: user.id,
+            character_id: newCharacterId,
+          };
+          console.log("[chat] loadConversation upserting conversation", insertPayload);
+
+          const { error: insertError } = await supabase
+            .from("conversations")
+            .upsert(insertPayload, { onConflict: "id", ignoreDuplicates: true });
+
+          if (insertError) {
+            console.error("[chat] loadConversation insert error", {
+              message: insertError.message,
+              details: insertError.details,
+            });
+            setError("대화를 불러올 수 없습니다.");
+            return;
+          }
+
+          console.log("[chat] loadConversation created conversation", {
+            conversationId,
+            character_id: newCharacterId,
+          });
+          setCharacterId(newCharacterId);
+          return;
+        } catch (err) {
+          console.error("[chat] loadConversation unexpected error", err);
+          setError("대화를 불러올 수 없습니다.");
+          return;
+        }
+      }
+
+      console.log("[chat] loadConversation success", {
+        conversationId,
+        character_id: data.character_id,
+      });
       setCharacterId(data.character_id);
     }
     if (conversationId) void loadConversation();
-  }, [conversationId]);
+  }, [conversationId, searchParams]);
 
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
