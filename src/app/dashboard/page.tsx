@@ -1,9 +1,7 @@
-import Link from "next/link";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { createServerClient } from "@supabase/ssr";
-import { CharacterCardsClient } from "./CharacterCardsClient";
-import { PersonaSectionClient } from "./PersonaSectionClient";
+import { DashboardTabsClient } from "./DashboardTabsClient";
 
 function getSupabaseEnv() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -22,6 +20,13 @@ type Character = {
   id: string;
   name: string;
   model: string | null;
+  created_at: string;
+  is_public: boolean | null;
+};
+
+type Conversation = {
+  id: string;
+  character_id: string;
   created_at: string;
 };
 
@@ -54,51 +59,35 @@ export default async function DashboardPage() {
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("persona")
+    .select("persona, nickname")
     .eq("user_id", user.id)
     .maybeSingle();
 
   const { data: characters } = await supabase
     .from("characters")
-    .select("id, name, model, created_at")
+    .select("id, name, model, created_at, is_public")
+    .eq("user_id", user.id)
+    .order("created_at", { ascending: false });
+
+  const { data: conversations } = await supabase
+    .from("conversations")
+    .select("id, character_id, created_at")
     .eq("user_id", user.id)
     .order("created_at", { ascending: false });
 
   const list = (characters ?? []) as Character[];
+  const convoList = (conversations ?? []) as Conversation[];
   const initialPersona = (profile?.persona as string | null) ?? "";
+  const initialNickname = (profile?.nickname as string | null) ?? "";
 
   return (
-    <div className="min-h-screen bg-zinc-50 text-zinc-900 dark:bg-black dark:text-zinc-50">
-      <main className="mx-auto flex min-h-screen w-full max-w-3xl flex-col gap-10 px-6 py-12">
-        <header className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-semibold tracking-tight">대시보드</h1>
-            <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
-              캐릭터를 만들고 대화해 보세요.
-            </p>
-          </div>
-          <Link
-            href="/characters/create"
-            className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
-          >
-            캐릭터 만들기
-          </Link>
-        </header>
-
-        <PersonaSectionClient initialPersona={initialPersona} />
-
-        <section>
-          <h2 className="text-lg font-semibold">내 캐릭터 목록</h2>
-          {list.length === 0 ? (
-            <p className="mt-3 text-sm text-zinc-600 dark:text-zinc-400">
-              아직 만든 캐릭터가 없습니다. 상단의 &quot;캐릭터 만들기&quot; 버튼을 눌러 시작해 보세요.
-            </p>
-          ) : (
-            <CharacterCardsClient initial={list} />
-          )}
-        </section>
-      </main>
-    </div>
+    <DashboardTabsClient
+      characters={list}
+      initialPersona={initialPersona}
+      conversations={convoList}
+      email={user.email ?? ""}
+      initialNickname={initialNickname}
+    />
   );
 }
 

@@ -133,7 +133,18 @@ export default function ChatPage() {
       content: text,
       created_at: new Date().toISOString(),
     };
-    setMessages((prev) => [...prev, userMessage]);
+    const assistantId = `temp-assistant-${Date.now()}`;
+
+    setMessages((prev) => [
+      ...prev,
+      userMessage,
+      {
+        id: assistantId,
+        role: "assistant",
+        content: "",
+        created_at: new Date().toISOString(),
+      },
+    ]);
     setInput("");
 
     try {
@@ -146,23 +157,31 @@ export default function ChatPage() {
           message: text,
         }),
       });
-
-      const data = (await res.json()) as { reply?: string; error?: string };
-
-      if (!res.ok || !data.reply) {
-        const msg = data.error ?? "메시지를 보내는 중 오류가 발생했습니다.";
+      if (!res.ok || !res.body) {
+        const msg = "메시지를 보내는 중 오류가 발생했습니다.";
         setError(msg);
         return;
       }
 
-      const assistantMessage: Message = {
-        id: `temp-assistant-${Date.now()}`,
-        role: "assistant",
-        content: data.reply,
-        created_at: new Date().toISOString(),
-      };
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
 
-      setMessages((prev) => [...prev, assistantMessage]);
+      let done = false;
+
+      while (!done) {
+        const { value, done: doneReading } = await reader.read();
+        done = doneReading;
+        if (value) {
+          const chunk = decoder.decode(value, { stream: true });
+          if (chunk) {
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === assistantId ? { ...m, content: (m.content ?? "") + chunk } : m
+              )
+            );
+          }
+        }
+      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : "네트워크 오류가 발생했습니다.";
       setError(msg);

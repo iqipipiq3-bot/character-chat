@@ -84,15 +84,17 @@ export async function POST(request: NextRequest) {
     // 캐릭터 프롬프트 조회
     const { data: character, error: characterError } = await supabase
       .from("characters")
-      .select("id, name, prompt, model")
+      .select("id, name, prompt, model, user_id, is_public")
       .eq("id", characterId)
-      .eq("user_id", user.id)
       .maybeSingle();
 
     if (characterError) {
       return NextResponse.json({ error: characterError.message }, { status: 400 });
     }
-    if (!character) {
+    if (
+      !character ||
+      (character.user_id !== user.id && !(character as any).is_public)
+    ) {
       return NextResponse.json({ error: "Character not found." }, { status: 404 });
     }
 
@@ -205,85 +207,129 @@ ${userPersona}
     const apiKey = getGeminiApiKey();
     const modelId = character.model || "gemini-2.5-pro";
 
-    const geminiResponse = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent?key=${apiKey}`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          generationConfig: {
-            maxOutputTokens: 8000,
-            temperature: 0.95,
-            topP: 0.95,
-          },
-          safetySettings: [
-            { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" },
-            { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
-            { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
-            { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" },
-          ],
-          system_instruction: {
-            parts: [{ text: systemPrompt }],
-          },
-          contents: conversationParts.map((m) => ({
-            role: m.role,
-            parts: [{ text: m.content }],
-          })),
-        }),
-      }
-    );
+    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:streamGenerateContent?key=${apiKey}`;
 
-    if (!geminiResponse.ok) {
-      const errorText = await geminiResponse.text();
-      return NextResponse.json(
-        { error: "Gemini API error", detail: errorText },
-        { status: 500 }
-      );
-    }
+    const encoder = new TextEncoder();
+    let fullReply = "";
 
-    const geminiJson = (await geminiResponse.json()) as GeminiGenerateContentResponse;
-    console.log("[gemini] response", JSON.stringify(geminiJson, null, 2));
+    const stream = new ReadableStream<Uint8Array>({
+      async start(controller) {
+        try {
+          const geminiResponse = await fetch(apiUrl, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              generationConfig: {
+                maxOutputTokens: 8000,
+                temperature: 0.95,
+                topP: 0.95,
+              },
+              safetySettings: [
+                { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" },
+                { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
+                { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
+                { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" },
+              ],
+              system_instruction: {
+                parts: [{ text: systemPrompt }],
+              },
+              contents: conversationParts.map((m) => ({
+                role: m.role,
+                parts: [{ text: m.content }],
+              })),
+            }),
+          });
 
-    const parts = geminiJson.candidates?.[0]?.content?.parts ?? [];
-    const reply = parts
-      .map((p) => p.text)
-      .filter((t): t is string => typeof t === "string" && t.length > 0)
-      .join("");
+          if (!geminiResponse.ok || !geminiResponse.body) {
+            const errorText = await geminiResponse.text();
+            controller.enqueue(
+              encoder.encode("답변을 생성하지 못했습니다. 잠시 후 다시 시도해 주세요.")
+            );
+            controller.close();
+            console.error("Gemini stream error", errorText);
+            return;
+          }
 
-    if (!reply.trim()) {
-      console.log("[gemini] empty reply payload", JSON.stringify(geminiJson, null, 2));
-    }
+          const reader = geminiResponse.body.getReader();
+          const decoder = new TextDecoder();
+          let buffer = "";
 
-    const finalReply =
-      reply.trim() ||
-      "답변을 생성하지 못했습니다. 잠시 후 다시 시도해 주세요.";
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
 
-    // 사용자 메시지 + AI 응답을 Supabase에 저장
-    const { error: insertError } = await supabase.from("messages").insert([
-      {
-        user_id: user.id,
-        character_id: characterId,
-        conversation_id: conversationId,
-        role: "user",
-        content: message,
+            let newlineIndex: number;
+            // streamGenerateContent는 JSON 줄 단위로 응답합니다.
+            while ((newlineIndex = buffer.indexOf("\n")) !== -1) {
+              const line = buffer.slice(0, newlineIndex).trim();
+              buffer = buffer.slice(newlineIndex + 1);
+              if (!line) continue;
+
+              try {
+                const json = JSON.parse(line) as GeminiGenerateContentResponse;
+                const parts = json.candidates?.[0]?.content?.parts ?? [];
+                const delta = parts
+                  .map((p) => p.text)
+                  .filter((t): t is string => typeof t === "string" && t.length > 0)
+                  .join("");
+                if (delta) {
+                  fullReply += delta;
+                  controller.enqueue(encoder.encode(delta));
+                }
+              } catch (err) {
+                console.error("Failed to parse Gemini stream line", err);
+              }
+            }
+          }
+
+          if (!fullReply.trim()) {
+            fullReply = "답변을 생성하지 못했습니다. 잠시 후 다시 시도해 주세요.";
+            controller.enqueue(encoder.encode(fullReply));
+          }
+
+          controller.close();
+
+          // 스트리밍이 끝난 뒤에 메시지를 저장합니다.
+          void (async () => {
+            const { error: insertError } = await supabase.from("messages").insert([
+              {
+                user_id: user.id,
+                character_id: characterId,
+                conversation_id: conversationId,
+                role: "user",
+                content: message,
+              },
+              {
+                user_id: user.id,
+                character_id: characterId,
+                conversation_id: conversationId,
+                role: "assistant",
+                content: fullReply,
+              },
+            ]);
+
+            if (insertError) {
+              console.error("Failed to insert messages", insertError.message);
+            }
+          })();
+        } catch (err) {
+          console.error("Gemini streaming error", err);
+          controller.enqueue(
+            encoder.encode("답변을 생성하지 못했습니다. 잠시 후 다시 시도해 주세요.")
+          );
+          controller.close();
+        }
       },
-      {
-        user_id: user.id,
-        character_id: characterId,
-        conversation_id: conversationId,
-        role: "assistant",
-        content: finalReply,
+    });
+
+    return new Response(stream, {
+      status: 200,
+      headers: {
+        "Content-Type": "text/plain; charset=utf-8",
       },
-    ]);
-
-    if (insertError) {
-      return NextResponse.json({ error: insertError.message }, { status: 400 });
-    }
-
-    return NextResponse.json({
-      reply: finalReply,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";

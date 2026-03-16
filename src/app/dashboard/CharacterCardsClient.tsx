@@ -10,11 +10,31 @@ type Character = {
   name: string;
   model: string | null;
   created_at: string;
+  is_public: boolean | null;
 };
 
 export function CharacterCardsClient({ initial }: { initial: Character[] }) {
   const router = useRouter();
   const [busyId, setBusyId] = useState<string | null>(null);
+
+  async function handleTogglePublic(character: Character) {
+    setBusyId(character.id);
+    try {
+      const supabase = createSupabaseBrowserClient();
+      const target = !character.is_public;
+      const { error } = await supabase
+        .from("characters")
+        .update({ is_public: target })
+        .eq("id", character.id);
+      if (error) throw new Error(error.message);
+      router.refresh();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "공개 설정 변경 중 오류가 발생했습니다.";
+      window.alert(message);
+    } finally {
+      setBusyId(null);
+    }
+  }
 
   async function handleDelete(character: Character) {
     const ok = window.confirm("정말 삭제하시겠습니까?");
@@ -91,7 +111,14 @@ export function CharacterCardsClient({ initial }: { initial: Character[] }) {
           className="flex items-center justify-between gap-3 rounded-lg border border-zinc-200 bg-white px-4 py-3 text-sm dark:border-zinc-800 dark:bg-zinc-950"
         >
           <div className="min-w-0">
-            <p className="truncate font-medium">{character.name}</p>
+            <div className="flex items-center gap-2">
+              <p className="truncate font-medium">{character.name}</p>
+              {character.is_public ? (
+                <span className="inline-flex items-center rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-700 ring-1 ring-emerald-100">
+                  공개중
+                </span>
+              ) : null}
+            </div>
             <p className="mt-1 text-xs text-zinc-600 dark:text-zinc-400">
               모델: {character.model || "Gemini 2.5 Pro"}
             </p>
@@ -104,6 +131,14 @@ export function CharacterCardsClient({ initial }: { initial: Character[] }) {
             >
               대화 시작
             </Link>
+            <button
+              type="button"
+              onClick={() => void handleTogglePublic(character)}
+              disabled={busyId === character.id}
+              className="rounded-full border border-zinc-200 px-3 py-1 text-xs font-medium hover:bg-zinc-100 disabled:opacity-60 dark:border-zinc-700 dark:hover:bg-zinc-900"
+            >
+              {character.is_public ? "비공개로 전환" : "공개로 전환"}
+            </button>
             <Link
               href={`/characters/${character.id}/edit`}
               className="rounded-full border border-zinc-200 px-3 py-1 text-xs font-medium hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
