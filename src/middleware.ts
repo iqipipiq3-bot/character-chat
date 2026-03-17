@@ -41,8 +41,12 @@ export async function middleware(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser();
 
-  const isDashboard = request.nextUrl.pathname.startsWith("/dashboard");
-  if (isDashboard && !user) {
+  const isProtected =
+    request.nextUrl.pathname.startsWith("/dashboard") ||
+    request.nextUrl.pathname.startsWith("/favorites") ||
+    request.nextUrl.pathname.startsWith("/personas") ||
+    request.nextUrl.pathname.startsWith("/mypage");
+  if (isProtected && !user) {
     const loginUrl = request.nextUrl.clone();
     loginUrl.pathname = "/login";
     loginUrl.searchParams.set("next", request.nextUrl.pathname);
@@ -53,6 +57,14 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/dashboard/:path*"],
+  matcher: [
+    "/dashboard/:path*",
+    "/favorites/:path*",
+    "/favorites",
+    "/personas/:path*",
+    "/personas",
+    "/mypage/:path*",
+    "/mypage",
+  ],
 };
 

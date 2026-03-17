@@ -25,7 +25,7 @@ export default function LoginPage() {
       });
       if (signInError) throw signInError;
 
-      router.replace("/dashboard");
+      router.replace("/explore");
     } catch (err) {
       const message = err instanceof Error ? err.message : "로그인에 실패했습니다.";
       setError(message);

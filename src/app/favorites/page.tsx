@@ -1,7 +1,7 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { createServerClient } from "@supabase/ssr";
-import { DashboardTabsClient } from "./DashboardTabsClient";
+import { FavoritesClient } from "./FavoritesClient";
 
 function getSupabaseEnv() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -10,17 +10,14 @@ function getSupabaseEnv() {
   return { url, anonKey };
 }
 
-type Character = {
+type FavoriteCharacter = {
   id: string;
   name: string;
   model: string | null;
-  created_at: string;
   is_public: boolean | null;
-  thumbnail_url: string | null;
-  description: string | null;
 };
 
-export default async function DashboardPage() {
+export default async function FavoritesPage() {
   const cookieStore = await cookies();
   const { url, anonKey } = getSupabaseEnv();
 
@@ -47,13 +44,21 @@ export default async function DashboardPage() {
 
   if (!user) redirect("/login");
 
-  const { data: characters } = await supabase
-    .from("characters")
-    .select("id, name, model, created_at, is_public, thumbnail_url, description")
-    .eq("user_id", user.id)
-    .order("created_at", { ascending: false });
+  const { data: favorites } = await supabase
+    .from("favorites")
+    .select("character_id")
+    .eq("user_id", user.id);
 
-  return (
-    <DashboardTabsClient characters={(characters ?? []) as Character[]} />
-  );
+  const characterIds = (favorites ?? []).map((f) => f.character_id as string);
+
+  let characters: FavoriteCharacter[] = [];
+  if (characterIds.length > 0) {
+    const { data } = await supabase
+      .from("characters")
+      .select("id, name, model, is_public")
+      .in("id", characterIds);
+    characters = (data ?? []) as FavoriteCharacter[];
+  }
+
+  return <FavoritesClient initial={characters} />;
 }

@@ -96,12 +96,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Character not found." }, { status: 404 });
     }
 
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("persona")
+    const { data: defaultPersona } = await supabase
+      .from("personas")
+      .select("content")
       .eq("user_id", user.id)
+      .eq("is_default", true)
       .maybeSingle();
-    const userPersona = (profile?.persona as string | null) ?? "";
+    const userPersona = (defaultPersona?.content as string | null) ?? "";
 
     // conversations 테이블에 대화방이 존재해야 messages FK가 깨지지 않습니다.
     // 1) conversation_id로 조회 2) 없으면 생성 3) 있으면 그대로 사용

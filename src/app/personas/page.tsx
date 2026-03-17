@@ -1,7 +1,7 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { createServerClient } from "@supabase/ssr";
-import { DashboardTabsClient } from "./DashboardTabsClient";
+import { PersonasClient } from "./PersonasClient";
 
 function getSupabaseEnv() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -10,17 +10,15 @@ function getSupabaseEnv() {
   return { url, anonKey };
 }
 
-type Character = {
+type Persona = {
   id: string;
   name: string;
-  model: string | null;
+  content: string;
+  is_default: boolean;
   created_at: string;
-  is_public: boolean | null;
-  thumbnail_url: string | null;
-  description: string | null;
 };
 
-export default async function DashboardPage() {
+export default async function PersonasPage() {
   const cookieStore = await cookies();
   const { url, anonKey } = getSupabaseEnv();
 
@@ -47,13 +45,16 @@ export default async function DashboardPage() {
 
   if (!user) redirect("/login");
 
-  const { data: characters } = await supabase
-    .from("characters")
-    .select("id, name, model, created_at, is_public, thumbnail_url, description")
+  const { data: personas } = await supabase
+    .from("personas")
+    .select("id, name, content, is_default, created_at")
     .eq("user_id", user.id)
-    .order("created_at", { ascending: false });
+    .order("created_at", { ascending: true });
 
   return (
-    <DashboardTabsClient characters={(characters ?? []) as Character[]} />
+    <PersonasClient
+      initial={(personas ?? []) as Persona[]}
+      userId={user.id}
+    />
   );
 }

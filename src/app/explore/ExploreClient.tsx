@@ -1,119 +1,102 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { createSupabaseBrowserClient } from "../lib/supabase";
+import { getCardGradient } from "../lib/gradient";
+import type { PublicCharacter } from "./page";
 
-type PublicCharacter = {
-  id: string;
-  name: string;
-  prompt: string;
-  model: string | null;
-  user_id: string;
-  usage_count: number | null;
+function formatCount(n: number | null): string {
+  if (!n) return "";
+  if (n >= 100000000) return `${(n / 100000000).toFixed(1)}억`;
+  if (n >= 10000) return `${(n / 10000).toFixed(1)}만`;
+  if (n >= 1000) return `${(n / 1000).toFixed(1)}천`;
+  return `${n}`;
+}
+
+type Props = {
+  initial: PublicCharacter[];
+  query?: string;
 };
 
-export function ExploreClient({ initial }: { initial: PublicCharacter[] }) {
+export function ExploreClient({ initial, query }: Props) {
   const router = useRouter();
-  const [busyId, setBusyId] = useState<string | null>(null);
-  const [toast, setToast] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (!toast) return;
-    const id = setTimeout(() => setToast(null), 3000);
-    return () => clearTimeout(id);
-  }, [toast]);
-
-  async function handleStartChat(character: PublicCharacter) {
-    setBusyId(character.id);
-    try {
-      const supabase = createSupabaseBrowserClient();
-
-      const {
-        data: { user },
-        error: userError,
-      } = await supabase.auth.getUser();
-      if (userError) throw userError;
-      if (!user) throw new Error("로그인이 필요합니다.");
-
-      const conversationId =
-        typeof crypto !== "undefined" && "randomUUID" in crypto
-          ? crypto.randomUUID()
-          : `${character.id}-${Date.now()}`;
-
-      const { error: convoError } = await supabase.from("conversations").insert({
-        id: conversationId,
-        user_id: user.id,
-        character_id: character.id,
-      });
-      if (convoError) throw convoError;
-
-      // 사용 횟수 증가 (낙관적)
-      const currentUsage = character.usage_count ?? 0;
-      void supabase
-        .from("characters")
-        .update({ usage_count: currentUsage + 1 })
-        .eq("id", character.id);
-
-      router.push(`/chat/${conversationId}`);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : "대화방을 여는 중 오류가 발생했습니다.";
-      setToast(msg);
-    } finally {
-      setBusyId(null);
-    }
+  if (initial.length === 0) {
+    return (
+      <p className="mt-6 text-sm text-zinc-600 dark:text-zinc-400">
+        {query
+          ? `"${query}"에 대한 검색 결과가 없습니다.`
+          : "아직 공개된 캐릭터가 없습니다."}
+      </p>
+    );
   }
 
   return (
-    <>
-      <div className="mt-6 space-y-3">
-        {initial.length === 0 ? (
-          <p className="text-sm text-zinc-600 dark:text-zinc-400">
-            아직 공개된 캐릭터가 없습니다.
-          </p>
-        ) : (
-          initial.map((character) => (
-            <article
-              key={character.id}
-              className="flex flex-col gap-3 rounded-lg border border-zinc-200 bg-white p-4 text-sm dark:border-zinc-800 dark:bg-zinc-950"
-            >
-              <div className="flex items-center justify-between gap-3">
-                <div className="min-w-0">
-                  <h2 className="truncate text-sm font-semibold text-zinc-900 dark:text-zinc-50">
-                    {character.name}
-                  </h2>
-                  <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-                    작성자: {character.user_id.slice(0, 8)}…
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  disabled={busyId === character.id}
-                  onClick={() => void handleStartChat(character)}
-                  className="rounded-full bg-zinc-900 px-3 py-1 text-xs font-medium text-white hover:bg-zinc-800 disabled:opacity-60 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
-                >
-                  {busyId === character.id ? "열는 중..." : "대화하기"}
-                </button>
+    <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      {initial.map((character) => (
+        <button
+          key={character.id}
+          type="button"
+          onClick={() => router.push(`/explore/${character.id}`)}
+          className="group relative overflow-hidden rounded-xl border border-zinc-200 bg-white text-left transition-transform hover:scale-[1.01] active:scale-[0.99] dark:border-zinc-800 dark:bg-zinc-950"
+        >
+          {/* 썸네일 */}
+          <div className="aspect-square w-full overflow-hidden">
+            {character.thumbnail_url ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={character.thumbnail_url}
+                alt={character.name}
+                className="h-full w-full object-cover object-top transition-transform duration-300 group-hover:scale-105"
+              />
+            ) : (
+              <div
+                className={`flex h-full w-full items-center justify-center ${getCardGradient(character.id)}`}
+              >
+                <span className="text-6xl font-bold text-white drop-shadow-lg">
+                  {character.name.charAt(0)}
+                </span>
               </div>
-
-              {/* 프롬프트 내용은 숨깁니다. */}
-
-              <p className="text-[11px] text-zinc-500 dark:text-zinc-400">
-                사용 횟수: {character.usage_count ?? 0}
-              </p>
-            </article>
-          ))
-        )}
-      </div>
-
-      {toast ? (
-        <div className="pointer-events-none fixed inset-x-0 bottom-6 flex justify-center">
-          <div className="pointer-events-auto rounded-full bg-zinc-900 px-4 py-2 text-xs font-medium text-white shadow-lg dark:bg-zinc-100 dark:text-zinc-900">
-            {toast}
+            )}
           </div>
-        </div>
-      ) : null}
-    </>
+
+          {/* 하단 정보 */}
+          <div className="px-3 py-2.5">
+            <p className="truncate text-sm font-semibold leading-snug">
+              {character.name}
+            </p>
+            {character.description ? (
+              <p className="mt-0.5 truncate text-xs text-zinc-500 dark:text-zinc-400">
+                {character.description}
+              </p>
+            ) : null}
+
+            {/* 태그 (최대 3개) */}
+            {character.tags && character.tags.length > 0 && (
+              <div className="mt-1.5 flex flex-wrap gap-1">
+                {character.tags.slice(0, 3).map((tag) => (
+                  <span
+                    key={tag}
+                    className="rounded-full bg-zinc-100 px-1.5 py-0.5 text-[10px] text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400"
+                  >
+                    #{tag}
+                  </span>
+                ))}
+              </div>
+            )}
+
+            <div className="mt-1.5 flex items-center justify-between gap-2">
+              <p className="truncate text-xs text-zinc-400 dark:text-zinc-500">
+                by {character.author_nickname || "익명"}
+              </p>
+              {character.usage_count ? (
+                <p className="shrink-0 text-xs text-zinc-400 dark:text-zinc-500">
+                  💬 {formatCount(character.usage_count)}
+                </p>
+              ) : null}
+            </div>
+          </div>
+        </button>
+      ))}
+    </div>
   );
 }
-
