@@ -61,7 +61,7 @@ export default function PlayChatClient({ character }: { character: Character }) 
 
   return (
     <div className="flex min-h-screen flex-col bg-[#F8F8F8] text-[#1A1A1A]">
-      <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col px-4 py-6">
+      <main className="mx-auto flex w-full max-w-7xl flex-1 flex-col px-4 py-6">
         <div className="mb-4 flex items-center justify-between">
           <Link
             href="/explore"
