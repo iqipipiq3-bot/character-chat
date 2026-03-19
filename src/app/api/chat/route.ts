@@ -299,6 +299,9 @@ ${userNoteSection}
       reply.trim() ||
       "답변을 생성하지 못했습니다. 잠시 후 다시 시도해 주세요.";
 
+    const now = new Date();
+    const assistantTime = new Date(now.getTime() + 1);
+
     const { error: insertError } = await supabase.from("messages").insert([
       {
         user_id: user.id,
@@ -306,6 +309,7 @@ ${userNoteSection}
         conversation_id: conversationId,
         role: "user",
         content: message,
+        created_at: now.toISOString(),
       },
       {
         user_id: user.id,
@@ -314,6 +318,7 @@ ${userNoteSection}
         role: "assistant",
         content: finalReply,
         model: modelId,
+        created_at: assistantTime.toISOString(),
       },
     ]);
 

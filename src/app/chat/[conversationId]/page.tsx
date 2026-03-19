@@ -381,14 +381,29 @@ export default function ChatPage() {
             .eq("conversation_id", conversationId)
             .order("created_at", { ascending: true });
           if (fallbackError) { setError(fallbackError.message); return; }
-          setMessages((fallbackData ?? []) as Message[]);
+          const fallbackSorted = ((fallbackData ?? []) as Message[]).sort((a, b) => {
+            const timeDiff = new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+            if (timeDiff !== 0) return timeDiff;
+            if (a.role === "user" && b.role === "assistant") return -1;
+            if (a.role === "assistant" && b.role === "user") return 1;
+            return 0;
+          });
+          setMessages(fallbackSorted);
           return;
         }
         setError(fetchError.message);
         return;
       }
 
-      setMessages((data ?? []) as Message[]);
+      const sorted = ((data ?? []) as Message[]).sort((a, b) => {
+        const timeDiff = new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+        if (timeDiff !== 0) return timeDiff;
+        // 같은 created_at이면 user → assistant 순서 보장
+        if (a.role === "user" && b.role === "assistant") return -1;
+        if (a.role === "assistant" && b.role === "user") return 1;
+        return 0;
+      });
+      setMessages(sorted);
     }
 
     if (conversationId) {
