@@ -559,7 +559,7 @@ export default function ChatPage() {
           </button>
         </div>
 
-        <div className="space-y-4 pb-36">
+        <div className="space-y-4 pb-52">
           {messages.length === 0 ? (
             <p className="text-sm text-[#666666]">
               아직 메시지가 없습니다. 아래 입력창에 첫 메시지를 보내 보세요.

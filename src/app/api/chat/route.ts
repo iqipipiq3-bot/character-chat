@@ -2,6 +2,8 @@ import { NextResponse, type NextRequest } from "next/server";
 import { cookies } from "next/headers";
 import { createServerClient } from "@supabase/ssr";
 
+export const maxDuration = 60;
+
 function getSupabaseEnv() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -236,41 +238,51 @@ ${userNoteSection}
       ? requestedModel
       : (character.model || "gemini-2.5-pro");
 
-    const geminiResponse = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent?key=${apiKey}`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          generationConfig: {
-            maxOutputTokens: 8000,
-            temperature: 0.95,
-            topP: 0.95,
-            thinkingConfig: { thinkingBudget: 1000 },
+    let geminiResponse: Response;
+    try {
+      geminiResponse = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent?key=${apiKey}`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
           },
-          safetySettings: [
-            { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" },
-            { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
-            { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
-            { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" },
-          ],
-          system_instruction: {
-            parts: [{ text: systemPrompt }],
-          },
-          contents: conversationParts.map((m) => ({
-            role: m.role,
-            parts: [{ text: m.content }],
-          })),
-        }),
-      }
-    );
+          body: JSON.stringify({
+            generationConfig: {
+              maxOutputTokens: 8000,
+              temperature: 0.95,
+              topP: 0.95,
+              thinkingConfig: { thinkingBudget: 1000 },
+            },
+            safetySettings: [
+              { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" },
+              { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
+              { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
+              { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" },
+            ],
+            system_instruction: {
+              parts: [{ text: systemPrompt }],
+            },
+            contents: conversationParts.map((m) => ({
+              role: m.role,
+              parts: [{ text: m.content }],
+            })),
+          }),
+        }
+      );
+    } catch (fetchError) {
+      console.error("Gemini API 에러:", fetchError);
+      return NextResponse.json(
+        { error: "AI 서버에 연결하지 못했습니다. 잠시 후 다시 시도해 주세요." },
+        { status: 503 }
+      );
+    }
 
     if (!geminiResponse.ok) {
       const errorText = await geminiResponse.text();
+      console.error("Gemini API 에러:", errorText);
       return NextResponse.json(
-        { error: "Gemini API error", detail: errorText },
+        { error: "AI 응답 생성에 실패했습니다. 잠시 후 다시 시도해 주세요." },
         { status: 500 }
       );
     }
