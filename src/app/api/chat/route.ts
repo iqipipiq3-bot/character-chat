@@ -72,6 +72,12 @@ type GeminiGenerateContentResponse = {
       }>;
     };
   }>;
+  usageMetadata?: {
+    promptTokenCount?: number;
+    candidatesTokenCount?: number;
+    thoughtsTokenCount?: number;
+    totalTokenCount?: number;
+  };
 };
 
 export async function POST(request: NextRequest) {
@@ -320,6 +326,7 @@ ${userNoteSection}
 
     const geminiJson = (await geminiResponse.json()) as GeminiGenerateContentResponse;
     console.log("[api/chat] gemini response", JSON.stringify(geminiJson, null, 2));
+
     const parts = geminiJson.candidates?.[0]?.content?.parts ?? [];
     const reply = parts
       .map((p) => p.text)
@@ -329,6 +336,14 @@ ${userNoteSection}
     const finalReply =
       reply.trim() ||
       "답변을 생성하지 못했습니다. 잠시 후 다시 시도해 주세요.";
+
+    // 토큰 사용량 추출
+    const usage = geminiJson.usageMetadata;
+    const promptTokens = usage?.promptTokenCount ?? null;
+    const completionTokens = usage?.candidatesTokenCount ?? null;
+    const thinkingTokens = usage?.thoughtsTokenCount ?? null;
+    const totalTokens = usage?.totalTokenCount ?? null;
+    console.log("[api/chat] token usage", { promptTokens, completionTokens, thinkingTokens, totalTokens });
 
     const now = new Date();
     const assistantTime = new Date(now.getTime() + 1);
@@ -349,6 +364,10 @@ ${userNoteSection}
         role: "assistant",
         content: finalReply,
         model: modelId,
+        prompt_tokens: promptTokens,
+        completion_tokens: completionTokens,
+        thinking_tokens: thinkingTokens,
+        total_tokens: totalTokens,
         created_at: assistantTime.toISOString(),
       },
     ]);
