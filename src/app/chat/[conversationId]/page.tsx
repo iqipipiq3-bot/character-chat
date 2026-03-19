@@ -133,6 +133,9 @@ const userMdComponents: Components = {
   em: ({ children }) => (
     <em style={{ color: "#555555", fontStyle: "normal" }}>{children}</em>
   ),
+  strong: ({ children }) => (
+    <strong style={{ fontWeight: 700 }}>{children}</strong>
+  ),
   p: ({ children }) => <p className="my-3 break-words">{children}</p>,
   code: ({ children, className }) => {
     if (className?.startsWith("language-")) {
@@ -150,6 +153,9 @@ const userMdComponents: Components = {
 const aiMdComponents: Components = {
   em: ({ children }) => (
     <em style={{ color: "#888888", fontStyle: "normal" }}>{children}</em>
+  ),
+  strong: ({ children }) => (
+    <strong style={{ fontWeight: 700 }}>{children}</strong>
   ),
   p: ({ children }) => <p className="my-3 break-words">{children}</p>,
   code: ({ children, className }) => {

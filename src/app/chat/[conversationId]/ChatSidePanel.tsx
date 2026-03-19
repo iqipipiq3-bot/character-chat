@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 
 export type Persona = {
   id: string;
@@ -51,6 +51,19 @@ export function ChatSidePanel({
   onEditPersonasClick,
 }: Props) {
   const [tab, setTab] = useState<"persona" | "note" | "font">("persona");
+  const [draftNote, setDraftNote] = useState(userNote);
+  const [noteSaved, setNoteSaved] = useState(false);
+
+  // 외부에서 userNote가 바뀌면(초기 로드) draft도 동기화
+  useEffect(() => {
+    setDraftNote(userNote);
+  }, [userNote]);
+
+  function handleNoteSave() {
+    onUserNoteChange(draftNote);
+    setNoteSaved(true);
+    setTimeout(() => setNoteSaved(false), 2000);
+  }
 
   const activePersona =
     activePersonaId !== null
@@ -172,17 +185,24 @@ export function ChatSidePanel({
               </p>
               <div className="relative">
                 <textarea
-                  value={userNote}
-                  onChange={(e) => onUserNoteChange(e.target.value)}
+                  value={draftNote}
+                  onChange={(e) => setDraftNote(e.target.value)}
                   maxLength={1000}
                   rows={9}
                   placeholder={"예: 오늘 유저는 기분이 안 좋음\n피곤하고 우울한 상태..."}
                   className="w-full resize-none rounded-lg border border-[#E0E0E0] bg-white px-3 py-2 pb-6 text-sm outline-none focus:border-[#666666]"
                 />
                 <span className="pointer-events-none absolute bottom-2 right-2 text-[11px] text-[#999999]">
-                  {userNote.length}/1000
+                  {draftNote.length}/1000
                 </span>
               </div>
+              <button
+                type="button"
+                onClick={handleNoteSave}
+                className="w-full rounded-lg bg-[#1A1A2E] py-2 text-xs font-medium text-white hover:bg-[#141424]"
+              >
+                {noteSaved ? "저장됨 ✓" : "저장"}
+              </button>
               <p className="text-xs text-[#AAAAAA]">※ 서버에 저장되지 않으며 브라우저 로컬에 유지됩니다.</p>
             </div>
           )}
