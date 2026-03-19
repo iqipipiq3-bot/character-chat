@@ -5,6 +5,7 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { createSupabaseBrowserClient } from "../../lib/supabase";
 import ReactMarkdown from "react-markdown";
+import type { Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import React from "react";
 import {
@@ -128,38 +129,41 @@ function CodeBlock({ children, light = false }: { children: React.ReactNode; lig
   );
 }
 
-function mdComponents(isUser: boolean) {
-  return {
-    em: ({ children }: { children: React.ReactNode }) => (
-      <em style={{ color: isUser ? "#555555" : "#888888", fontStyle: "normal" }}>{children}</em>
-    ),
-    p: ({ children }: { children: React.ReactNode }) => (
-      <p className="my-3 break-words">{children}</p>
-    ),
-    code: ({ children, className }: { children?: React.ReactNode; className?: string }) => {
-      if (className?.startsWith("language-")) {
-        return <code className={className}>{children}</code>;
-      }
-      return (
-        <code
-          style={{
-            background: isUser ? "#ddd8d0" : "#f0f0f0",
-            color: isUser ? "#333333" : "#c7254e",
-            padding: "2px 5px",
-            borderRadius: "4px",
-            fontFamily: "inherit",
-            fontSize: "0.85em",
-          }}
-        >
-          {children}
-        </code>
-      );
-    },
-    pre: ({ children }: { children?: React.ReactNode }) => (
-      <CodeBlock light={isUser}>{children}</CodeBlock>
-    ),
-  };
-}
+const userMdComponents: Components = {
+  em: ({ children }) => (
+    <em style={{ color: "#555555", fontStyle: "normal" }}>{children}</em>
+  ),
+  p: ({ children }) => <p className="my-3 break-words">{children}</p>,
+  code: ({ children, className }) => {
+    if (className?.startsWith("language-")) {
+      return <code className={className}>{children}</code>;
+    }
+    return (
+      <code style={{ background: "#ddd8d0", color: "#333333", padding: "2px 5px", borderRadius: "4px", fontFamily: "inherit", fontSize: "0.85em" }}>
+        {children}
+      </code>
+    );
+  },
+  pre: ({ children }) => <CodeBlock light>{children}</CodeBlock>,
+};
+
+const aiMdComponents: Components = {
+  em: ({ children }) => (
+    <em style={{ color: "#888888", fontStyle: "normal" }}>{children}</em>
+  ),
+  p: ({ children }) => <p className="my-3 break-words">{children}</p>,
+  code: ({ children, className }) => {
+    if (className?.startsWith("language-")) {
+      return <code className={className}>{children}</code>;
+    }
+    return (
+      <code style={{ background: "#f0f0f0", color: "#c7254e", padding: "2px 5px", borderRadius: "4px", fontFamily: "inherit", fontSize: "0.85em" }}>
+        {children}
+      </code>
+    );
+  },
+  pre: ({ children }) => <CodeBlock>{children}</CodeBlock>,
+};
 
 export default function ChatPage() {
   const router = useRouter();
@@ -655,7 +659,7 @@ export default function ChatPage() {
                       >
                         <ReactMarkdown
                           remarkPlugins={[remarkGfm]}
-                          components={mdComponents(m.role === "user")}
+                          components={m.role === "user" ? userMdComponents : aiMdComponents}
                         >
                           {(m.content ?? "").replaceAll("\n", "\n\n")}
                         </ReactMarkdown>
