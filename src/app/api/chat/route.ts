@@ -36,6 +36,34 @@ type PostBody = {
 
 const ALLOWED_MODELS = ["gemini-2.5-pro", "gemini-3.1-pro-preview"];
 
+const MODEL_CONFIG: Record<string, {
+  maxOutputTokens: number;
+  temperature: number;
+  topP: number;
+  thinkingBudget: number;
+  systemSuffix: string;
+}> = {
+  "gemini-2.5-pro": {
+    maxOutputTokens: 8000,
+    temperature: 0.95,
+    topP: 0.95,
+    thinkingBudget: 500,
+    systemSuffix: "",
+  },
+  "gemini-3.1-pro-preview": {
+    maxOutputTokens: 8000,
+    temperature: 1.00,
+    topP: 0.95,
+    thinkingBudget: 300,
+    systemSuffix: `
+# 출력 길이 규칙
+- 응답은 반드시 충분한 분량으로 작성할 것. 짧은 응답은 허용되지 않음.
+- 최소 1800자 이상 서술할 것.
+- 행동 묘사, 심리 묘사, 감각 묘사를 풍부하게 포함하여 문학적 밀도를 높일 것.
+- 요약하거나 생략하지 말 것.`,
+  },
+};
+
 type GeminiGenerateContentResponse = {
   candidates?: Array<{
     content?: {
@@ -238,6 +266,9 @@ ${userNoteSection}
       ? requestedModel
       : (character.model || "gemini-2.5-pro");
 
+    const modelCfg = MODEL_CONFIG[modelId] ?? MODEL_CONFIG["gemini-2.5-pro"];
+    const finalSystemPrompt = systemPrompt + modelCfg.systemSuffix;
+
     let geminiResponse: Response;
     try {
       geminiResponse = await fetch(
@@ -249,10 +280,10 @@ ${userNoteSection}
           },
           body: JSON.stringify({
             generationConfig: {
-              maxOutputTokens: 8000,
-              temperature: 0.95,
-              topP: 0.95,
-              thinkingConfig: { thinkingBudget: 1000 },
+              maxOutputTokens: modelCfg.maxOutputTokens,
+              temperature: modelCfg.temperature,
+              topP: modelCfg.topP,
+              thinkingConfig: { thinkingBudget: modelCfg.thinkingBudget },
             },
             safetySettings: [
               { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" },
@@ -261,7 +292,7 @@ ${userNoteSection}
               { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" },
             ],
             system_instruction: {
-              parts: [{ text: systemPrompt }],
+              parts: [{ text: finalSystemPrompt }],
             },
             contents: conversationParts.map((m) => ({
               role: m.role,
