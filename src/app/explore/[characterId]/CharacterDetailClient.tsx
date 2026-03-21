@@ -5,13 +5,16 @@ import { useRouter } from "next/navigation";
 import { createSupabaseBrowserClient } from "../../lib/supabase";
 import { getCardGradient } from "../../lib/gradient";
 import { MarkdownRenderer } from "../../components/MarkdownRenderer";
-import type { CharacterDetail, Comment } from "./page";
+import { replaceVariables } from "../../lib/replaceVariables";
+import type { CharacterDetail, Comment, Scenario } from "./page";
 
 type Props = {
   character: CharacterDetail;
+  scenarios: Scenario[];
   initialComments: Comment[];
   currentUserId: string | null;
   isCharacterOwner: boolean;
+  userName: string;
 };
 
 function formatDate(iso: string) {
@@ -32,12 +35,15 @@ function formatCount(n: number | null): string {
 
 export function CharacterDetailClient({
   character,
+  scenarios,
   initialComments,
   currentUserId,
   isCharacterOwner,
+  userName,
 }: Props) {
   const router = useRouter();
   const [startingChat, setStartingChat] = useState(false);
+  const [showScenarioPicker, setShowScenarioPicker] = useState(false);
   const [comments, setComments] = useState<Comment[]>(initialComments);
   const [newComment, setNewComment] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -46,22 +52,50 @@ export function CharacterDetailClient({
   const [savingEditId, setSavingEditId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
-  async function handleStartChat() {
+  function handleStartChat() {
     if (!currentUserId) {
       router.push(`/login?next=/explore/${character.id}`);
       return;
     }
+    if (scenarios.length > 0) {
+      setShowScenarioPicker(true);
+    } else {
+      void startConversation(null);
+    }
+  }
+
+  async function startConversation(scenario: Scenario | null) {
     setStartingChat(true);
+    setShowScenarioPicker(false);
     try {
       const supabase = createSupabaseBrowserClient();
       const conversationId = crypto.randomUUID();
       const { error } = await supabase.from("conversations").insert({
         id: conversationId,
-        user_id: currentUserId,
+        user_id: currentUserId!,
         character_id: character.id,
+        scenario_id: scenario?.id ?? null,
       });
       if (error) throw error;
-      router.push(`/chat/${conversationId}`);
+
+      // 선택한 시나리오의 첫 인사말을 assistant 메시지로 저장
+      if (scenario) {
+        await supabase.from("messages").insert({
+          conversation_id: conversationId,
+          user_id: currentUserId!,
+          character_id: character.id,
+          role: "assistant",
+          content: scenario.greeting,
+          created_at: new Date().toISOString(),
+        });
+      }
+
+      const modelParam = character.recommended_model
+        ? `?model=${encodeURIComponent(character.recommended_model)}`
+        : "";
+      console.log("[startConversation] recommended_model:", character.recommended_model);
+      console.log("[startConversation] 이동 URL:", `/chat/${conversationId}${modelParam}`);
+      router.push(`/chat/${conversationId}${modelParam}`);
     } catch (err) {
       window.alert(err instanceof Error ? err.message : "대화방을 여는 중 오류가 발생했습니다.");
       setStartingChat(false);
@@ -155,6 +189,54 @@ export function CharacterDetailClient({
 
   return (
     <div className="mx-auto w-full max-w-2xl px-6 py-10 pb-24">
+
+      {/* ── 시나리오 선택 모달 ── */}
+      {showScenarioPicker && (
+        <div
+          className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 sm:items-center"
+          onClick={() => !startingChat && setShowScenarioPicker(false)}
+        >
+          <div
+            className="w-full max-w-md rounded-t-2xl bg-white p-6 dark:bg-zinc-900 sm:rounded-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-50">
+              시작 상황 선택
+            </h2>
+            <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
+              어떤 상황에서 시작할지 선택하세요.
+            </p>
+
+            <div className="mt-4 space-y-2">
+              {scenarios.map((scenario) => (
+                <button
+                  key={scenario.id}
+                  type="button"
+                  disabled={startingChat}
+                  onClick={() => void startConversation(scenario)}
+                  className="w-full rounded-xl border border-zinc-200 p-4 text-left transition-colors hover:border-zinc-400 hover:bg-zinc-50 disabled:opacity-60 dark:border-zinc-700 dark:hover:border-zinc-500 dark:hover:bg-zinc-800"
+                >
+                  <p className="text-sm font-medium text-zinc-900 dark:text-zinc-50">
+                    {scenario.name}
+                  </p>
+                  <p className="mt-1.5 line-clamp-2 text-xs text-zinc-500 dark:text-zinc-400">
+                    {scenario.greeting}
+                  </p>
+                </button>
+              ))}
+            </div>
+
+            <button
+              type="button"
+              disabled={startingChat}
+              onClick={() => setShowScenarioPicker(false)}
+              className="mt-3 w-full rounded-xl border border-zinc-200 py-2.5 text-sm text-zinc-500 hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-900"
+            >
+              취소
+            </button>
+          </div>
+        </div>
+      )}
       {/* ── 캐릭터 헤더 ── */}
       <div className="flex gap-5">
         {/* 썸네일 */}
@@ -189,7 +271,7 @@ export function CharacterDetailClient({
 
           {/* 설명 */}
           {character.description ? (
-            <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">{character.description}</p>
+            <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">{replaceVariables(character.description, userName)}</p>
           ) : null}
 
           {/* 태그 */}
@@ -227,7 +309,15 @@ export function CharacterDetailClient({
       {character.introduction ? (
         <div className="mt-8 rounded-xl border border-zinc-200 bg-white px-6 py-5 dark:border-zinc-800 dark:bg-zinc-950">
           <h2 className="mb-4 text-sm font-semibold text-zinc-500 dark:text-zinc-400">소개</h2>
-          <MarkdownRenderer content={character.introduction} />
+          <MarkdownRenderer content={replaceVariables(character.introduction, userName)} />
+        </div>
+      ) : null}
+
+      {/* ── 제작자 코멘트 ── */}
+      {character.creator_comment ? (
+        <div className="mt-4 rounded-xl border border-zinc-200 bg-white px-6 py-5 dark:border-zinc-800 dark:bg-zinc-950">
+          <h2 className="mb-3 text-sm font-semibold text-zinc-500 dark:text-zinc-400">제작자 코멘트</h2>
+          <p className="whitespace-pre-wrap text-sm text-zinc-700 dark:text-zinc-300">{replaceVariables(character.creator_comment, userName)}</p>
         </div>
       ) : null}
 

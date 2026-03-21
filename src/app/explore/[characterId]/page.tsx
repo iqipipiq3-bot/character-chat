@@ -20,6 +20,12 @@ export type Comment = {
   author_nickname: string;
 };
 
+export type Scenario = {
+  id: string;
+  name: string;
+  greeting: string;
+};
+
 export type CharacterDetail = {
   id: string;
   name: string;
@@ -30,7 +36,10 @@ export type CharacterDetail = {
   author_nickname: string;
   usage_count: number | null;
   tags: string[] | null;
+  creator_comment: string | null;
+  recommended_model: string | null;
 };
+
 
 export default async function CharacterDetailPage({
   params,
@@ -55,7 +64,7 @@ export default async function CharacterDetailPage({
   // 캐릭터 조회 (공개 캐릭터만)
   const { data: character } = await supabase
     .from("characters")
-    .select("id, name, description, introduction, thumbnail_url, user_id, usage_count, tags")
+    .select("id, name, description, introduction, thumbnail_url, user_id, usage_count, tags, creator_comment, recommended_model")
     .eq("id", characterId)
     .eq("is_public", true)
     .maybeSingle();
@@ -65,6 +74,27 @@ export default async function CharacterDetailPage({
   // 현재 사용자
   const { data: { user } } = await supabase.auth.getUser();
 
+  // {{user}} 치환용 유저 이름
+  let userName = "유저";
+  if (user) {
+    const { data: defaultPersona } = await supabase
+      .from("personas")
+      .select("name")
+      .eq("user_id", user.id)
+      .eq("is_default", true)
+      .maybeSingle();
+    if (defaultPersona?.name) {
+      userName = defaultPersona.name as string;
+    } else {
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("nickname")
+        .eq("user_id", user.id)
+        .maybeSingle();
+      if (profile?.nickname) userName = profile.nickname as string;
+    }
+  }
+
   // 작성자 닉네임
   const { data: authorProfile } = await supabase
     .from("profiles")
@@ -73,6 +103,19 @@ export default async function CharacterDetailPage({
     .maybeSingle();
 
   const authorNickname = (authorProfile?.nickname as string | null) ?? "";
+
+  // 시나리오 조회
+  const { data: scenariosData } = await supabase
+    .from("character_scenarios")
+    .select("id, name, first_message")
+    .eq("character_id", characterId)
+    .order("created_at", { ascending: true });
+
+  const scenarios: Scenario[] = (scenariosData ?? []).map((s) => ({
+    id: s.id as string,
+    name: s.name as string,
+    greeting: (s.first_message as string | null) ?? "",
+  }));
 
   // 댓글 조회
   const { data: commentsData } = await supabase
@@ -115,15 +158,19 @@ export default async function CharacterDetailPage({
     author_nickname: authorNickname,
     usage_count: (character.usage_count as number | null) ?? null,
     tags: (character.tags as string[] | null) ?? null,
+    creator_comment: (character.creator_comment as string | null) ?? null,
+    recommended_model: (character.recommended_model as string | null) ?? null,
   };
 
   return (
     <div className="min-h-[calc(100vh-3rem)] bg-zinc-50 text-zinc-900 dark:bg-black dark:text-zinc-50">
       <CharacterDetailClient
         character={characterDetail}
+        scenarios={scenarios}
         initialComments={comments}
         currentUserId={user?.id ?? null}
         isCharacterOwner={user?.id === character.user_id}
+        userName={userName}
       />
       <BottomNav />
     </div>

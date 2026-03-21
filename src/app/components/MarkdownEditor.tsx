@@ -47,8 +47,7 @@ export function MarkdownEditor({
       {tab === "edit" ? (
         <textarea
           value={value}
-          onChange={(e) => onChange(e.target.value)}
-          maxLength={maxLength}
+          onChange={(e) => onChange(e.target.value.length > maxLength ? e.target.value.slice(0, maxLength) : e.target.value)}
           rows={rows}
           placeholder={placeholder}
           className="w-full resize-none rounded-b-lg border border-t-0 border-zinc-200 bg-white px-3 py-3 font-mono text-sm leading-relaxed outline-none focus:border-zinc-400 dark:border-zinc-800 dark:bg-zinc-950 dark:focus:border-zinc-600"

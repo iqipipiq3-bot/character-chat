@@ -14,6 +14,7 @@ import {
   type FontSettings,
   type Persona,
 } from "./ChatSidePanel";
+import { replaceVariables } from "../../lib/replaceVariables";
 
 type Message = {
   id: string;
@@ -180,6 +181,8 @@ export default function ChatPage() {
   const [characterId, setCharacterId] = useState<string | null>(null);
   const [characterName, setCharacterName] = useState<string | null>(null);
   const [characterThumbnail, setCharacterThumbnail] = useState<string | null>(null);
+  const [characterRecommendedModel, setCharacterRecommendedModel] = useState<ModelId>("gemini-2.5-pro");
+  const [profileNickname, setProfileNickname] = useState<string>("");
 
   // 사이드 패널
   const [sidePanelOpen, setSidePanelOpen] = useState(false);
@@ -199,9 +202,19 @@ export default function ChatPage() {
 
   // localStorage 초기화 + 헤더 모델 변경 이벤트 수신
   useEffect(() => {
-    const savedModel = localStorage.getItem("chat_model");
-    if (savedModel && ALLOWED_MODELS.includes(savedModel as ModelId)) {
-      setSelectedModel(savedModel as ModelId);
+    const modelFromQuery = searchParams.get("model");
+    console.log("[chat] searchParams model:", modelFromQuery);
+    console.log("[chat] ALLOWED_MODELS 포함 여부:", modelFromQuery ? ALLOWED_MODELS.includes(modelFromQuery as ModelId) : false);
+    if (modelFromQuery && ALLOWED_MODELS.includes(modelFromQuery as ModelId)) {
+      console.log("[chat] 추천 모델 적용:", modelFromQuery);
+      setSelectedModel(modelFromQuery as ModelId);
+      localStorage.setItem("chat_model", modelFromQuery);
+    } else {
+      const savedModel = localStorage.getItem("chat_model");
+      console.log("[chat] localStorage 모델:", savedModel);
+      if (savedModel && ALLOWED_MODELS.includes(savedModel as ModelId)) {
+        setSelectedModel(savedModel as ModelId);
+      }
     }
 
     function onModelChange(e: Event) {
@@ -220,6 +233,7 @@ export default function ChatPage() {
 
     window.addEventListener("chatModelChange", onModelChange);
     return () => window.removeEventListener("chatModelChange", onModelChange);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // 모델 변경 핸들러
@@ -343,21 +357,36 @@ export default function ChatPage() {
     async function loadCharacterAndPersonas() {
       const supabase = createSupabaseBrowserClient();
       const [{ data: char }, { data: { user } }] = await Promise.all([
-        supabase.from("characters").select("name, thumbnail_url").eq("id", characterId!).maybeSingle(),
+        supabase.from("characters").select("name, thumbnail_url, recommended_model").eq("id", characterId!).maybeSingle(),
         supabase.auth.getUser(),
       ]);
       setCharacterName((char?.name as string | null) ?? null);
       setCharacterThumbnail((char?.thumbnail_url as string | null) ?? null);
+      const recModel = (char?.recommended_model as string | null) ?? "gemini-2.5-pro";
+      if (ALLOWED_MODELS.includes(recModel as ModelId)) {
+        setCharacterRecommendedModel(recModel as ModelId);
+      }
       if (!user) return;
-      const { data: personaData } = await supabase
-        .from("personas")
-        .select("id, name, content, is_default")
-        .eq("user_id", user.id)
-        .order("created_at", { ascending: true });
+      const [{ data: personaData }, { data: profileData }] = await Promise.all([
+        supabase.from("personas").select("id, name, content, is_default").eq("user_id", user.id).order("created_at", { ascending: true }),
+        supabase.from("profiles").select("nickname").eq("user_id", user.id).maybeSingle(),
+      ]);
       setPersonas((personaData ?? []) as Persona[]);
+      setProfileNickname((profileData?.nickname as string | null) ?? "");
     }
     void loadCharacterAndPersonas();
   }, [characterId]);
+
+  // {{user}} 치환용 유저 이름: 활성 페르소나 name → 기본 페르소나 name → 프로필 닉네임 → "유저"
+  const userName = (() => {
+    if (activePersonaId) {
+      const p = personas.find((p) => p.id === activePersonaId);
+      if (p?.name) return p.name;
+    }
+    const def = personas.find((p) => p.is_default);
+    if (def?.name) return def.name;
+    return profileNickname || "유저";
+  })();
 
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
@@ -618,7 +647,7 @@ export default function ChatPage() {
                       {characterName && (
                         <div className="flex min-w-0 items-center gap-1">
                           <span className="truncate text-sm font-medium text-[#333333]">{characterName}</span>
-                          <span className="flex-shrink-0"><ModelHeartIcon model={m.model ?? "gemini-2.5-pro"} /></span>
+                          <span className="flex-shrink-0"><ModelHeartIcon model={m.model ?? characterRecommendedModel} /></span>
                         </div>
                       )}
                     </div>
@@ -682,7 +711,7 @@ export default function ChatPage() {
                           remarkPlugins={[remarkGfm]}
                           components={m.role === "user" ? userMdComponents : aiMdComponents}
                         >
-                          {(m.content ?? "").replaceAll("\n", "\n\n")}
+                          {replaceVariables(m.content ?? "", userName).replaceAll("\n", "\n\n")}
                         </ReactMarkdown>
                       </div>
                     )}

@@ -42,6 +42,13 @@ export function HeaderClient({ displayName, isLoggedIn }: Props) {
     }
   }, [isChatPage]);
 
+  useEffect(() => {
+    const supabase = createSupabaseBrowserClient();
+    supabase.auth.getSession().then(({ data, error }) => {
+      console.log("[HeaderClient] getSession result:", { session: data.session, error });
+    });
+  }, []);
+
   function handleModelChange(value: string) {
     setChatModel(value);
     localStorage.setItem("chat_model", value);
@@ -86,7 +93,7 @@ export function HeaderClient({ displayName, isLoggedIn }: Props) {
       </Link>
 
       {/* 검색창 */}
-      <form onSubmit={handleSearchSubmit} className="min-w-0 flex-1">
+      <form onSubmit={handleSearchSubmit} className="min-w-0 ml-auto w-full max-w-sm">
         <div className="relative">
           <svg
             className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-400"

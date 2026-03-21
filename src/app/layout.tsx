@@ -4,7 +4,7 @@ import { createServerClient } from "@supabase/ssr";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { ConversationSidebar } from "./ConversationSidebar";
-import { HeaderClient } from "./HeaderClient";
+import { HeaderShell, HeaderPadding } from "./HeaderShell";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -70,16 +70,14 @@ export default async function RootLayout({
   return (
     <html lang="ko">
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
-        {/* 상단 고정 헤더 */}
-        <header className="fixed left-0 right-0 top-0 z-50 h-12 border-b border-zinc-200 bg-white/80 backdrop-blur dark:border-zinc-800 dark:bg-black/70">
-          <HeaderClient displayName={displayName} isLoggedIn={!!user} />
-        </header>
+        {/* 상단 고정 헤더 (로그인/회원가입 페이지에서는 숨김) */}
+        <HeaderShell displayName={displayName} isLoggedIn={!!user} />
         {/* 고정 사이드바 — /explore, /dashboard에서만 표시 */}
         <ConversationSidebar />
-        {/* 헤더 높이만큼 오프셋 */}
-        <div className="pt-12">
+        {/* 헤더 높이만큼 오프셋 (로그인/회원가입 페이지에서는 패딩 없음) */}
+        <HeaderPadding>
           {children}
-        </div>
+        </HeaderPadding>
       </body>
     </html>
   );

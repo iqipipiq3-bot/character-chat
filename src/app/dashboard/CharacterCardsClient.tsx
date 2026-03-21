@@ -153,10 +153,10 @@ export function CharacterCardsClient({ initial }: Props) {
           /* relative이되 overflow-hidden 없음 → 드롭다운이 카드 위로 자유롭게 올라올 수 있음 */
           className="relative rounded-xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950"
         >
-          {/* 카드 클릭 → 대화 시작 */}
+          {/* 카드 클릭 → 캐릭터 상세 */}
           <button
             type="button"
-            onClick={() => router.push(`/chat/${character.id}`)}
+            onClick={() => router.push(`/explore/${character.id}`)}
             className="block w-full text-left hover:opacity-90 active:opacity-75"
           >
             {/* 1:1 썸네일 */}
