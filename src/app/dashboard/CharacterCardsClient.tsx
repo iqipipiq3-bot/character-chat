@@ -128,7 +128,7 @@ export function CharacterCardsClient({ initial }: Props) {
   }
 
   async function handleCopyLink(character: Character) {
-    const url = `${window.location.origin}/play/${character.id}`;
+    const url = `${window.location.origin}/explore/${character.id}`;
     try {
       await navigator.clipboard.writeText(url);
       window.alert("링크가 복사되었습니다.");

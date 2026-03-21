@@ -50,14 +50,16 @@ export default async function RootLayout({
   const { data: { user } } = await supabase.auth.getUser();
 
   let displayName: string | null = null;
+  let avatarUrl: string | null = null;
   if (user) {
     const { data: profile } = await supabase
       .from("profiles")
-      .select("nickname")
+      .select("nickname, avatar_url")
       .eq("user_id", user.id)
       .maybeSingle();
 
     const nickname = (profile?.nickname as string | null) ?? "";
+    avatarUrl = (profile?.avatar_url as string | null) ?? null;
     if (nickname.trim().length > 0) {
       displayName = nickname.trim();
     } else if (user.email) {
@@ -71,7 +73,7 @@ export default async function RootLayout({
     <html lang="ko">
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
         {/* 상단 고정 헤더 (로그인/회원가입 페이지에서는 숨김) */}
-        <HeaderShell displayName={displayName} isLoggedIn={!!user} />
+        <HeaderShell displayName={displayName} isLoggedIn={!!user} avatarUrl={avatarUrl} />
         {/* 고정 사이드바 — /explore, /dashboard에서만 표시 */}
         <ConversationSidebar />
         {/* 헤더 높이만큼 오프셋 (로그인/회원가입 페이지에서는 패딩 없음) */}

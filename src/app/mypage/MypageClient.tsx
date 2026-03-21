@@ -2,15 +2,20 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { createSupabaseBrowserClient } from "../lib/supabase";
 import { BottomNav } from "../BottomNav";
+import { getCardGradient } from "../lib/gradient";
+import type { FollowedCreator } from "./page";
 
 type Props = {
   email: string;
   initialNickname: string;
+  followedCreators: FollowedCreator[];
 };
 
-export function MypageClient({ email, initialNickname }: Props) {
+export function MypageClient({ email, initialNickname, followedCreators }: Props) {
+  const router = useRouter();
   const [nickname, setNickname] = useState(initialNickname);
   const [savingNickname, setSavingNickname] = useState(false);
   const [nicknameError, setNicknameError] = useState<string | null>(null);
@@ -101,6 +106,41 @@ export function MypageClient({ email, initialNickname }: Props) {
               <span>👤 페르소나 관리</span>
               <span className="text-zinc-400">→</span>
             </Link>
+          </div>
+
+          {/* 팔로우한 크리에이터 */}
+          <div className="mt-8">
+            <h2 className="mb-3 text-sm font-semibold text-zinc-500 dark:text-zinc-400">팔로우한 크리에이터</h2>
+            {followedCreators.length === 0 ? (
+              <p className="rounded-lg border border-zinc-200 bg-white px-4 py-4 text-sm text-zinc-400 dark:border-zinc-800 dark:bg-zinc-950">
+                아직 팔로우한 크리에이터가 없습니다.
+              </p>
+            ) : (
+              <div className="space-y-2">
+                {followedCreators.map((creator) => (
+                  <button
+                    key={creator.user_id}
+                    type="button"
+                    onClick={() => router.push(`/creator/${creator.user_id}`)}
+                    className="flex w-full items-center gap-3 rounded-lg border border-zinc-200 bg-white px-4 py-3 text-left hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-950 dark:hover:bg-zinc-900"
+                  >
+                    <div className={`flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full ${getCardGradient(creator.user_id)}`}>
+                      {creator.avatar_url ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={creator.avatar_url} alt={creator.nickname} className="h-full w-full object-cover" />
+                      ) : (
+                        <span className="text-sm font-bold text-white">{creator.nickname.charAt(0).toUpperCase()}</span>
+                      )}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium">{creator.nickname}</p>
+                      <p className="text-xs text-zinc-400 dark:text-zinc-500">캐릭터 {creator.character_count}개</p>
+                    </div>
+                    <span className="shrink-0 text-zinc-400">→</span>
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       </main>

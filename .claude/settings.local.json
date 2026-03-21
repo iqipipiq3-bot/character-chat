@@ -5,7 +5,13 @@
       "Bash(npm install:*)",
       "Bash(ls:*)",
       "Bash(npm run:*)",
-      "Bash(xargs grep:*)"
+      "Bash(xargs grep:*)",
+      "Bash(cmd.exe /c \"dir /b C:\\\\Users\\\\User\\\\Desktop\\\\character-chat\\\\src\\\\app\\\\creator\\\\[userId]\")",
+      "Bash(cmd.exe /c \"git log --oneline -10\")",
+      "Bash(cmd.exe /c \"git log --oneline -5\")",
+      "Bash(cmd.exe /c \"git -C C:\\\\\\\\Users\\\\\\\\User\\\\\\\\Desktop\\\\\\\\character-chat log --oneline -10\")",
+      "Bash(cmd.exe /c \"git -C C:\\\\\\\\Users\\\\\\\\User\\\\\\\\Desktop\\\\\\\\character-chat log --oneline -5 2>&1\")",
+      "Bash(cmd.exe /c \"git -C C:\\\\\\\\Users\\\\\\\\User\\\\\\\\Desktop\\\\\\\\character-chat status\")"
     ]
   }
 }

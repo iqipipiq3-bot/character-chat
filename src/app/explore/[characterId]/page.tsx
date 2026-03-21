@@ -61,12 +61,11 @@ export default async function CharacterDetailPage({
     },
   });
 
-  // 캐릭터 조회 (공개 캐릭터만)
+  // 캐릭터 조회 (로그인 유저는 비공개도 id로 접근 가능, RLS로 제어)
   const { data: character } = await supabase
     .from("characters")
     .select("id, name, description, introduction, thumbnail_url, user_id, usage_count, tags, creator_comment, recommended_model")
     .eq("id", characterId)
-    .eq("is_public", true)
     .maybeSingle();
 
   if (!character) notFound();
@@ -120,22 +119,22 @@ export default async function CharacterDetailPage({
   // 댓글 조회
   const { data: commentsData } = await supabase
     .from("comments")
-    .select("id, user_id, content, created_at, updated_at")
+    .select("*")
     .eq("character_id", characterId)
     .order("created_at", { ascending: true });
 
   const rawComments = commentsData ?? [];
 
-  // 댓글 작성자 닉네임 일괄 조회
+  // 댓글 작성자 닉네임 별도 조회
   const commentUserIds = [...new Set(rawComments.map((c) => c.user_id as string))];
-  const commentAuthorMap: Record<string, string> = {};
+  const nicknameMap: Record<string, string> = {};
   if (commentUserIds.length > 0) {
-    const { data: profiles } = await supabase
+    const { data: profilesData } = await supabase
       .from("profiles")
       .select("user_id, nickname")
       .in("user_id", commentUserIds);
-    for (const p of profiles ?? []) {
-      commentAuthorMap[p.user_id as string] = (p.nickname as string | null) ?? "";
+    for (const p of profilesData ?? []) {
+      nicknameMap[p.user_id as string] = (p.nickname as string | null) ?? "알 수 없음";
     }
   }
 
@@ -145,7 +144,7 @@ export default async function CharacterDetailPage({
     content: c.content as string,
     created_at: c.created_at as string,
     updated_at: c.updated_at as string,
-    author_nickname: commentAuthorMap[c.user_id as string] ?? "",
+    author_nickname: nicknameMap[c.user_id as string] ?? "알 수 없음",
   }));
 
   const characterDetail: CharacterDetail = {

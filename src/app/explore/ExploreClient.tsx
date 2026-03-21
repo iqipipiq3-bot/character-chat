@@ -86,7 +86,14 @@ export function ExploreClient({ initial, query }: Props) {
 
             <div className="mt-1.5 flex items-center justify-between gap-2">
               <p className="truncate text-xs text-zinc-400 dark:text-zinc-500">
-                by {character.author_nickname || "익명"}
+                by{" "}
+                <a
+                  href={`/creator/${character.user_id}`}
+                  onClick={(e) => e.stopPropagation()}
+                  className="hover:underline hover:text-zinc-700 dark:hover:text-zinc-300"
+                >
+                  {character.author_nickname || "익명"}
+                </a>
               </p>
               {character.usage_count ? (
                 <p className="shrink-0 text-xs text-zinc-400 dark:text-zinc-500">

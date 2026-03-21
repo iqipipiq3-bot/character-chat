@@ -21,9 +21,10 @@ import { createSupabaseBrowserClient } from "./lib/supabase";
 type Props = {
   displayName: string | null;
   isLoggedIn: boolean;
+  avatarUrl: string | null;
 };
 
-export function HeaderClient({ displayName, isLoggedIn }: Props) {
+export function HeaderClient({ displayName, isLoggedIn, avatarUrl }: Props) {
   const router = useRouter();
   const pathname = usePathname();
   const isChatPage = pathname?.startsWith("/chat/") ?? false;
@@ -177,8 +178,13 @@ export function HeaderClient({ displayName, isLoggedIn }: Props) {
             onClick={() => setDropdownOpen((v) => !v)}
             className="flex h-8 items-center gap-1.5 rounded-lg px-2 text-xs font-medium hover:bg-zinc-100 dark:hover:bg-zinc-900"
           >
-            <div className="flex h-6 w-6 items-center justify-center rounded-full bg-zinc-200 text-[11px] font-semibold uppercase dark:bg-zinc-700">
-              {displayName?.charAt(0) ?? "?"}
+            <div className="flex h-6 w-6 shrink-0 items-center justify-center overflow-hidden rounded-full bg-zinc-200 text-[11px] font-semibold uppercase dark:bg-zinc-700">
+              {avatarUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={avatarUrl} alt={displayName ?? ""} className="h-full w-full object-cover" />
+              ) : (
+                displayName?.charAt(0) ?? "?"
+              )}
             </div>
             <span className="hidden max-w-[72px] truncate sm:block">
               {displayName}

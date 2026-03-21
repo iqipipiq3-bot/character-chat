@@ -130,7 +130,7 @@ export function CharacterDetailClient({
         content: data.content as string,
         created_at: data.created_at as string,
         updated_at: data.updated_at as string,
-        author_nickname: (profile?.nickname as string | null) ?? "",
+        author_nickname: (profile?.nickname as string | null) ?? "알 수 없음",
       };
       setComments((prev) => [...prev, newEntry]);
       setNewComment("");
@@ -291,7 +291,13 @@ export function CharacterDetailClient({
           )}
 
           <p className="mt-1.5 text-xs text-zinc-400 dark:text-zinc-500">
-            by {character.author_nickname || "익명"}
+            by{" "}
+            <a
+              href={`/creator/${character.user_id}`}
+              className="hover:underline hover:text-zinc-600 dark:hover:text-zinc-300"
+            >
+              {character.author_nickname || "익명"}
+            </a>
           </p>
 
           <button
@@ -347,9 +353,12 @@ export function CharacterDetailClient({
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
-                        <span className="text-xs font-semibold">
-                          {comment.author_nickname || "익명"}
-                        </span>
+                        <a
+                          href={`/creator/${comment.user_id}`}
+                          className="text-xs font-semibold hover:underline"
+                        >
+                          {comment.author_nickname || "알 수 없음"}
+                        </a>
                         <span className="text-[11px] text-zinc-400">
                           {formatDate(comment.created_at)}
                           {comment.updated_at !== comment.created_at && " (수정됨)"}

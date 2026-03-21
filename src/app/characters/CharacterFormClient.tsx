@@ -4,6 +4,7 @@ import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createSupabaseBrowserClient } from "../lib/supabase";
 import { MarkdownEditor } from "../components/MarkdownEditor";
+import { convertToWebP } from "../lib/convertToWebP";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -271,11 +272,11 @@ export function CharacterFormClient({ mode, characterId, initialData }: Props) {
       // ── 1. 썸네일 업로드 ──────────────────────────────────────────────────
       let finalThumbUrl = thumbUrl;
       if (thumbFile) {
-        const ext = thumbFile.name.split(".").pop() ?? "jpg";
-        const path = `${user.id}/${crypto.randomUUID()}.${ext}`;
+        const webpFile = await convertToWebP(thumbFile);
+        const path = `${user.id}/${webpFile.name}`;
         const { error: upErr } = await supabase.storage
           .from("character-thumbnails")
-          .upload(path, thumbFile, { upsert: true });
+          .upload(path, webpFile, { upsert: true });
         if (upErr) throw upErr;
         finalThumbUrl = supabase.storage.from("character-thumbnails").getPublicUrl(path).data.publicUrl;
       }
@@ -374,11 +375,11 @@ export function CharacterFormClient({ mode, characterId, initialData }: Props) {
       }
       for (const asset of assets) {
         if (asset.file && !asset.id) {
-          const ext = asset.file.name.split(".").pop() ?? "jpg";
-          const path = `${user.id}/assets/${crypto.randomUUID()}.${ext}`;
+          const webpFile = await convertToWebP(asset.file);
+          const path = `${user.id}/assets/${webpFile.name}`;
           const { error: aUpErr } = await supabase.storage
             .from("character-assets")
-            .upload(path, asset.file, { upsert: true });
+            .upload(path, webpFile, { upsert: true });
           if (aUpErr) { console.error("[save] asset upload failed:", aUpErr); continue; }
           const assetUrl = supabase.storage.from("character-assets").getPublicUrl(path).data.publicUrl;
           const { error: aInsErr } = await supabase
