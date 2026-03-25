@@ -4,7 +4,6 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createSupabaseBrowserClient } from "../lib/supabase";
-import { BottomNav } from "../BottomNav";
 import { getCardGradient } from "../lib/gradient";
 import type { FollowedCreator } from "./page";
 
@@ -144,7 +143,6 @@ export function MypageClient({ email, initialNickname, followedCreators }: Props
           </div>
         </div>
       </main>
-      <BottomNav />
     </div>
   );
 }

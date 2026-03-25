@@ -1,10 +1,11 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createSupabaseBrowserClient } from "../lib/supabase";
 import { MarkdownEditor } from "../components/MarkdownEditor";
 import { convertToWebP } from "../lib/convertToWebP";
+import { CharacterCard } from "../components/CharacterCard";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -24,6 +25,8 @@ type AssetItem = {
   file?: File;
   url?: string;
   preview?: string;
+  title?: string;
+  keyword?: string;
 };
 
 type LorebookItem = {
@@ -31,6 +34,12 @@ type LorebookItem = {
   id?: string;
   title: string;
   keyword: string;
+  content: string;
+};
+
+type PromptTemplate = {
+  id: string;
+  title: string;
   content: string;
 };
 
@@ -42,7 +51,7 @@ export type CharacterFormInitialData = {
   thumbnailUrl: string | null;
   tags: string[];
   scenarios: { id: string; name: string; greeting: string; prompt: string }[];
-  assets: { id: string; url: string }[];
+  assets: { id: string; url: string; title?: string; keyword?: string }[];
   lorebooks: { id: string; title: string; keyword: string; content: string }[];
   creatorComment: string;
   targetGender: string;
@@ -111,6 +120,20 @@ export function CharacterFormClient({ mode, characterId, initialData }: Props) {
   // ── Settings ──
   const [prompt, setPrompt] = useState(initialData?.prompt ?? "");
 
+  // ── Templates ──
+  const [templates, setTemplates] = useState<PromptTemplate[]>([]);
+  const [showTemplateSave, setShowTemplateSave] = useState(false);
+  const [templateTitle, setTemplateTitle] = useState("");
+  const [templateSaving, setTemplateSaving] = useState(false);
+  const [showNewTemplateForm, setShowNewTemplateForm] = useState(false);
+  const [newTemplateTitle, setNewTemplateTitle] = useState("");
+  const [newTemplateContent, setNewTemplateContent] = useState("");
+  const [newTemplateSaving, setNewTemplateSaving] = useState(false);
+  const [templateEditingId, setTemplateEditingId] = useState<string | null>(null);
+  const [templateEditTitle, setTemplateEditTitle] = useState("");
+  const [templateEditContent, setTemplateEditContent] = useState("");
+  const [templateEditSaving, setTemplateEditSaving] = useState(false);
+
   // ── Scenarios ──
   const [scenarios, setScenarios] = useState<ScenarioItem[]>(
     initialData?.scenarios?.length
@@ -121,8 +144,10 @@ export function CharacterFormClient({ mode, characterId, initialData }: Props) {
   // ── Assets ──
   const assetInputRef = useRef<HTMLInputElement>(null);
   const [assets, setAssets] = useState<AssetItem[]>(
-    (initialData?.assets ?? []).map((a) => ({ ...a, localId: a.id }))
+    (initialData?.assets ?? []).map((a) => ({ ...a, localId: a.id, title: a.title ?? "", keyword: a.keyword ?? "" }))
   );
+  const [editingAsset, setEditingAsset] = useState<AssetItem | null>(null);
+  const [assetModalError, setAssetModalError] = useState<string | null>(null);
   const [deletedAssetIds, setDeletedAssetIds] = useState<string[]>([]);
 
   // ── Lorebook ──
@@ -176,14 +201,18 @@ export function CharacterFormClient({ mode, characterId, initialData }: Props) {
 
   function handleAssetFiles(e: React.ChangeEvent<HTMLInputElement>) {
     const files = Array.from(e.target.files ?? []);
-    setAssets((prev) => [
-      ...prev,
-      ...files.map((file) => ({
-        localId: crypto.randomUUID(),
-        file,
-        preview: URL.createObjectURL(file),
-      })),
-    ]);
+    setAssets((prev) => {
+      const remaining = 100 - prev.length;
+      const allowed = files.slice(0, remaining);
+      return [
+        ...prev,
+        ...allowed.map((file) => ({
+          localId: crypto.randomUUID(),
+          file,
+          preview: URL.createObjectURL(file),
+        })),
+      ];
+    });
     if (assetInputRef.current) assetInputRef.current.value = "";
   }
 
@@ -231,6 +260,83 @@ export function CharacterFormClient({ mode, characterId, initialData }: Props) {
   function handleLoreDragEnd() {
     loreDragIndex.current = null;
     setLoreDragOver(null);
+  }
+
+  // ── Template handlers ──
+
+  async function loadTemplates() {
+    const supabase = createSupabaseBrowserClient();
+    const { data } = await supabase
+      .from("prompt_templates")
+      .select("id, title, content")
+      .order("created_at", { ascending: false });
+    setTemplates(data ?? []);
+  }
+
+  useEffect(() => {
+    if (activeTab === "settings") loadTemplates();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab]);
+
+  async function saveTemplate() {
+    if (!templateTitle.trim()) return;
+    setTemplateSaving(true);
+    const supabase = createSupabaseBrowserClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) { setTemplateSaving(false); return; }
+    await supabase.from("prompt_templates").insert({
+      user_id: user.id,
+      title: templateTitle.trim(),
+      content: prompt,
+    });
+    setTemplateTitle("");
+    setShowTemplateSave(false);
+    setTemplateSaving(false);
+    await loadTemplates();
+  }
+
+  async function deleteTemplate(id: string) {
+    const supabase = createSupabaseBrowserClient();
+    await supabase.from("prompt_templates").delete().eq("id", id);
+    setTemplates((prev) => prev.filter((t) => t.id !== id));
+  }
+
+  function appendTemplate(content: string) {
+    setPrompt((prev) => {
+      const base = prev.trimEnd();
+      return base ? base + "\n\n" + content : content;
+    });
+  }
+
+  async function saveNewTemplate() {
+    if (!newTemplateTitle.trim() || !newTemplateContent.trim()) return;
+    setNewTemplateSaving(true);
+    const supabase = createSupabaseBrowserClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) { setNewTemplateSaving(false); return; }
+    await supabase.from("prompt_templates").insert({
+      user_id: user.id,
+      title: newTemplateTitle.trim(),
+      content: newTemplateContent.trim(),
+    });
+    setNewTemplateTitle("");
+    setNewTemplateContent("");
+    setShowNewTemplateForm(false);
+    setNewTemplateSaving(false);
+    await loadTemplates();
+  }
+
+  async function saveTemplateEdit() {
+    if (!templateEditingId || !templateEditTitle.trim() || !templateEditContent.trim()) return;
+    setTemplateEditSaving(true);
+    const supabase = createSupabaseBrowserClient();
+    await supabase
+      .from("prompt_templates")
+      .update({ title: templateEditTitle.trim(), content: templateEditContent.trim() })
+      .eq("id", templateEditingId);
+    setTemplateEditingId(null);
+    setTemplateEditSaving(false);
+    await loadTemplates();
   }
 
   // ── Validate ──
@@ -375,6 +481,7 @@ export function CharacterFormClient({ mode, characterId, initialData }: Props) {
       }
       for (const asset of assets) {
         if (asset.file && !asset.id) {
+          // 신규 업로드
           const webpFile = await convertToWebP(asset.file);
           const path = `${user.id}/assets/${webpFile.name}`;
           const { error: aUpErr } = await supabase.storage
@@ -384,8 +491,15 @@ export function CharacterFormClient({ mode, characterId, initialData }: Props) {
           const assetUrl = supabase.storage.from("character-assets").getPublicUrl(path).data.publicUrl;
           const { error: aInsErr } = await supabase
             .from("character_assets")
-            .insert({ character_id: charId!, url: assetUrl });
+            .insert({ character_id: charId!, url: assetUrl, title: asset.title ?? null, keyword: asset.keyword ?? null });
           if (aInsErr) console.error("[save] asset insert failed:", aInsErr);
+        } else if (asset.id) {
+          // 기존 에셋 title/keyword 업데이트
+          const { error: aUpdErr } = await supabase
+            .from("character_assets")
+            .update({ title: asset.title ?? null, keyword: asset.keyword ?? null })
+            .eq("id", asset.id);
+          if (aUpdErr) console.error("[save] asset update failed:", aUpdErr);
         }
       }
 
@@ -421,9 +535,15 @@ export function CharacterFormClient({ mode, characterId, initialData }: Props) {
 
   // ── Render ──
 
+  // ── 미리보기용 파생값 ──
+  const previewThumb = thumbPreview ?? thumbUrl ?? null;
+  const previewName = name || "캐릭터 이름";
+  const previewDesc = description || "한줄 소개가 여기에 표시됩니다.";
+  const previewGreeting = scenarios[0]?.greeting || "첫 인사말이 여기에 표시됩니다.";
+
   return (
     <div className="min-h-screen bg-zinc-50 text-zinc-900 dark:bg-black dark:text-zinc-50">
-      <div className="mx-auto w-full max-w-2xl px-4 py-8">
+      <div className="mx-auto w-full max-w-5xl px-4 py-8">
 
         {/* Header */}
         <div className="flex items-center justify-between">
@@ -466,12 +586,14 @@ export function CharacterFormClient({ mode, characterId, initialData }: Props) {
           ))}
         </div>
 
-        {/* Tab content */}
-        <div className="mt-6 space-y-6">
+        {/* Tab content — 프로필/시나리오는 좌우 분할, 나머지는 단일 컬럼 */}
+        <div className={`mt-6 ${activeTab === "profile" || activeTab === "scenarios" || activeTab === "settings" ? "grid grid-cols-1 gap-8 md:grid-cols-2 md:items-start" : activeTab === "assets" || activeTab === "lorebook" || activeTab === "publish" ? "w-full space-y-6" : "max-w-2xl space-y-6"}`}>
 
           {/* ── 탭1: 프로필 ── */}
           {activeTab === "profile" && (
             <>
+            {/* 왼쪽: 폼 */}
+            <div className="space-y-6">
               {/* Thumbnail */}
               <div>
                 <label className={LABEL}>
@@ -592,12 +714,31 @@ export function CharacterFormClient({ mode, characterId, initialData }: Props) {
                 />
                 <p className="mt-1 text-right text-xs text-zinc-400">{tags.length}/10</p>
               </div>
+            </div>{/* 왼쪽 끝 */}
+
+            {/* 오른쪽: 미리보기 */}
+            <div className="hidden md:block">
+              <div className="sticky top-6 space-y-4">
+                <p className="text-xs font-medium text-zinc-400 dark:text-zinc-500">미리보기</p>
+                <CharacterCard
+                  character={{
+                    id: characterId ?? "preview",
+                    name: previewName,
+                    thumbnail_url: previewThumb,
+                    description: previewDesc,
+                    tags: tags.length > 0 ? tags : null,
+                  }}
+                />
+              </div>
+            </div>
             </>
           )}
 
           {/* ── 탭2: 캐릭터 설정 ── */}
           {activeTab === "settings" && (
-            <div>
+            <>
+            {/* 왼쪽: 프롬프트 textarea */}
+            <div className="self-start">
               <div className="flex items-baseline justify-between">
                 <label className={LABEL}>
                   캐릭터 설정 프롬프트 <span className="text-red-500">*</span>
@@ -610,19 +751,211 @@ export function CharacterFormClient({ mode, characterId, initialData }: Props) {
                 말투, 성격, 세계관, 배경 설정 등을 자연어로 자유롭게 적어 주세요.
               </p>
               <textarea
-                rows={18}
+                rows={24}
                 value={prompt}
                 onChange={(e) => setPrompt(cap(e.target.value, 7000))}
                 placeholder="예: 너는 따뜻하고 유머러스한 마법사로, 사용자의 고민을 공감해 주며..."
                 className={`mt-2 resize-none ${INPUT}`}
               />
             </div>
+
+            {/* 오른쪽: 템플릿 패널 */}
+            <div className="hidden md:block">
+              <div className="sticky top-6 space-y-3">
+                <p className="text-xs font-medium text-zinc-400 dark:text-zinc-500">내 템플릿</p>
+
+                {/* 현재 내용 저장 버튼 */}
+                {showTemplateSave ? (
+                  <div className="space-y-2">
+                    <input
+                      type="text"
+                      value={templateTitle}
+                      onChange={(e) => setTemplateTitle(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); void saveTemplate(); } if (e.key === "Escape") { setShowTemplateSave(false); setTemplateTitle(""); } }}
+                      placeholder="템플릿 이름"
+                      autoFocus
+                      maxLength={50}
+                      className={INPUT}
+                    />
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => { setShowTemplateSave(false); setTemplateTitle(""); }}
+                        className="flex-1 rounded-lg border border-zinc-200 py-1.5 text-xs text-zinc-500 hover:border-zinc-400 dark:border-zinc-700"
+                      >
+                        취소
+                      </button>
+                      <button
+                        type="button"
+                        disabled={!templateTitle.trim() || templateSaving}
+                        onClick={() => void saveTemplate()}
+                        className="flex-1 rounded-lg bg-zinc-900 py-1.5 text-xs text-white disabled:opacity-40 hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
+                      >
+                        저장
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => { setShowTemplateSave(true); setShowNewTemplateForm(false); }}
+                    className="w-full rounded-lg border border-dashed border-zinc-300 py-2 text-xs text-zinc-500 hover:border-zinc-400 hover:text-zinc-700 dark:border-zinc-700 dark:hover:border-zinc-500 dark:hover:text-zinc-300"
+                  >
+                    + 현재 내용 템플릿으로 저장
+                  </button>
+                )}
+
+                {/* 신규 템플릿 만들기 버튼 */}
+                {showNewTemplateForm ? (
+                  <div className="space-y-2 rounded-xl border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-900">
+                    <input
+                      type="text"
+                      value={newTemplateTitle}
+                      onChange={(e) => setNewTemplateTitle(e.target.value)}
+                      placeholder="템플릿 이름"
+                      autoFocus
+                      maxLength={50}
+                      className={INPUT}
+                    />
+                    <div>
+                      <textarea
+                        rows={6}
+                        value={newTemplateContent}
+                        onChange={(e) => setNewTemplateContent(e.target.value)}
+                        placeholder="템플릿 내용을 입력하세요..."
+                        maxLength={7000}
+                        className="w-full resize-none rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs outline-none focus:border-zinc-400 dark:border-zinc-800 dark:bg-zinc-950 dark:focus:border-zinc-600"
+                      />
+                      <p className={`text-right text-[10px] ${newTemplateContent.length >= 7000 ? "text-red-500" : newTemplateContent.length >= 6500 ? "text-orange-400" : "text-zinc-400"}`}>
+                        {newTemplateContent.length.toLocaleString()} / 7,000
+                      </p>
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => { setShowNewTemplateForm(false); setNewTemplateTitle(""); setNewTemplateContent(""); }}
+                        className="flex-1 rounded-lg border border-zinc-200 py-1.5 text-xs text-zinc-500 hover:border-zinc-400 dark:border-zinc-700"
+                      >
+                        취소
+                      </button>
+                      <button
+                        type="button"
+                        disabled={!newTemplateTitle.trim() || !newTemplateContent.trim() || newTemplateSaving}
+                        onClick={() => void saveNewTemplate()}
+                        className="flex-1 rounded-lg bg-zinc-900 py-1.5 text-xs text-white disabled:opacity-40 hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
+                      >
+                        저장
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => { setShowNewTemplateForm(true); setShowTemplateSave(false); }}
+                    className="w-full rounded-lg border border-dashed border-zinc-300 py-2 text-xs text-zinc-500 hover:border-zinc-400 hover:text-zinc-700 dark:border-zinc-700 dark:hover:border-zinc-500 dark:hover:text-zinc-300"
+                  >
+                    + 신규 템플릿 만들기
+                  </button>
+                )}
+
+                {/* 템플릿 목록 */}
+                {templates.length === 0 ? (
+                  <p className="py-4 text-center text-xs text-zinc-400 dark:text-zinc-600">
+                    저장된 템플릿이 없습니다
+                  </p>
+                ) : (
+                  <div className="max-h-[60vh] space-y-2 overflow-y-auto pr-0.5">
+                    {templates.map((t) =>
+                      templateEditingId === t.id ? (
+                        /* 인라인 수정 폼 */
+                        <div key={t.id} className="space-y-2 rounded-xl border border-zinc-300 bg-white p-3 dark:border-zinc-700 dark:bg-zinc-900">
+                          <input
+                            type="text"
+                            value={templateEditTitle}
+                            onChange={(e) => setTemplateEditTitle(e.target.value)}
+                            maxLength={50}
+                            autoFocus
+                            className={INPUT}
+                          />
+                          <div>
+                            <textarea
+                              value={templateEditContent}
+                              onChange={(e) => setTemplateEditContent(e.target.value)}
+                              maxLength={7000}
+                              className="w-full min-h-[300px] resize-y overflow-y-auto rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs outline-none focus:border-zinc-400 dark:border-zinc-800 dark:bg-zinc-950 dark:focus:border-zinc-600"
+                            />
+                            <p className={`text-right text-[10px] ${templateEditContent.length >= 7000 ? "text-red-500" : templateEditContent.length >= 6500 ? "text-orange-400" : "text-zinc-400"}`}>
+                              {templateEditContent.length.toLocaleString()} / 7,000
+                            </p>
+                          </div>
+                          <div className="flex gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => setTemplateEditingId(null)}
+                              className="flex-1 rounded-md border border-zinc-200 py-1 text-[10px] text-zinc-500 hover:border-zinc-400 dark:border-zinc-700"
+                            >
+                              취소
+                            </button>
+                            <button
+                              type="button"
+                              disabled={!templateEditTitle.trim() || !templateEditContent.trim() || templateEditSaving}
+                              onClick={() => void saveTemplateEdit()}
+                              className="flex-1 rounded-md bg-zinc-900 py-1 text-[10px] text-white disabled:opacity-40 hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
+                            >
+                              저장
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        /* 카드 */
+                        <div
+                          key={t.id}
+                          className="rounded-xl border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-900"
+                        >
+                          <p className="truncate text-xs font-semibold text-zinc-800 dark:text-zinc-100">
+                            {t.title}
+                          </p>
+                          <p className="mt-0.5 line-clamp-2 text-[10px] text-zinc-500 dark:text-zinc-400">
+                            {t.content.slice(0, 50)}{t.content.length > 50 ? "…" : ""}
+                          </p>
+                          <div className="mt-2 flex gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => appendTemplate(t.content)}
+                              className="flex-1 rounded-md border border-zinc-200 py-1 text-[10px] text-zinc-600 hover:border-zinc-400 dark:border-zinc-700 dark:text-zinc-400 dark:hover:border-zinc-500"
+                            >
+                              추가
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => { setTemplateEditingId(t.id); setTemplateEditTitle(t.title); setTemplateEditContent(t.content); }}
+                              className="flex-1 rounded-md border border-zinc-200 py-1 text-[10px] text-zinc-500 hover:border-zinc-400 dark:border-zinc-700 dark:text-zinc-500 dark:hover:border-zinc-500"
+                            >
+                              수정
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => void deleteTemplate(t.id)}
+                              className="flex-1 rounded-md border border-red-200 py-1 text-[10px] text-red-500 hover:border-red-400 dark:border-red-900 dark:hover:border-red-700"
+                            >
+                              삭제
+                            </button>
+                          </div>
+                        </div>
+                      )
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+            </>
           )}
 
           {/* ── 탭3: 시작 상황 ── */}
           {activeTab === "scenarios" && (
             <>
-              <div className="space-y-4">
+            {/* 왼쪽: 폼 */}
+            <div className="space-y-4 self-start">
                 {scenarios.map((scenario, i) => (
                   <div
                     key={scenario.localId}
@@ -703,7 +1036,6 @@ export function CharacterFormClient({ mode, characterId, initialData }: Props) {
                     </div>
                   </div>
                 ))}
-              </div>
 
               {scenarios.length < 3 ? (
                 <button
@@ -721,6 +1053,38 @@ export function CharacterFormClient({ mode, characterId, initialData }: Props) {
               ) : (
                 <p className="text-center text-xs text-zinc-400">시작 상황은 최대 3개까지 만들 수 있습니다.</p>
               )}
+            </div>{/* 왼쪽 끝 */}
+
+            {/* 오른쪽: 미리보기 */}
+            <div className="hidden md:block">
+              <div className="sticky top-6">
+                <p className="mb-3 text-xs font-medium text-zinc-400 dark:text-zinc-500">미리보기</p>
+
+                {/* 채팅 첫 메시지 말풍선 미리보기 */}
+                <div className="rounded-2xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
+                  <p className="mb-3 text-[11px] text-zinc-400">첫 인사말 말풍선</p>
+                  <div className="flex items-start gap-2.5">
+                    {/* 아바타 */}
+                    <div className="h-8 w-8 shrink-0 overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-700">
+                      {previewThumb ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={previewThumb} alt="" className="h-full w-full object-cover" />
+                      ) : (
+                        <div className="flex h-full w-full items-center justify-center text-zinc-400">
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex-1">
+                      <p className="mb-1 text-[11px] font-medium text-zinc-600 dark:text-zinc-300">{previewName}</p>
+                      <div className="rounded-2xl rounded-tl-none bg-zinc-100 px-3 py-2 dark:bg-zinc-800">
+                        <p className="whitespace-pre-wrap text-xs text-zinc-800 dark:text-zinc-100">{previewGreeting}</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
             </>
           )}
 
@@ -728,18 +1092,42 @@ export function CharacterFormClient({ mode, characterId, initialData }: Props) {
           {activeTab === "assets" && (
             <>
               <div>
-                <label className={LABEL}>채팅 이미지 에셋 (선택)</label>
+                <label className={LABEL}>
+                  채팅 이미지 에셋 (선택)
+                  <span className="ml-2 text-sm font-normal text-zinc-500 dark:text-zinc-400">
+                    {assets.length}/100
+                  </span>
+                </label>
                 <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-                  채팅에 출력될 이미지를 업로드하세요. 여러 장 업로드 가능합니다.
+                  채팅에 출력될 이미지를 업로드하세요. 최대 100장까지 업로드 가능합니다.
                 </p>
               </div>
 
+              {assets.length >= 100 ? (
+                <div className="flex w-full items-center justify-center rounded-xl border border-dashed border-zinc-300 py-4 text-sm text-zinc-400 dark:border-zinc-700">
+                  최대 100장까지 업로드 가능합니다
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => assetInputRef.current?.click()}
+                  className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-dashed border-zinc-300 py-4 text-sm text-zinc-500 hover:border-zinc-400 hover:text-zinc-700 dark:border-zinc-700 dark:hover:border-zinc-500 dark:hover:text-zinc-300"
+                >
+                  + 이미지 추가
+                  <span className="text-xs text-zinc-400">({100 - assets.length}장 남음)</span>
+                </button>
+              )}
+
               {assets.length > 0 && (
-                <div className="grid grid-cols-3 gap-3 sm:grid-cols-4">
+                <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))" }}>
                   {assets.map((asset) => {
                     const src = asset.preview ?? asset.url;
                     return (
-                      <div key={asset.localId} className="group relative aspect-square">
+                      <div
+                        key={asset.localId}
+                        className="group relative aspect-square cursor-pointer"
+                        onClick={() => { setEditingAsset(asset); setAssetModalError(null); }}
+                      >
                         {src ? (
                           // eslint-disable-next-line @next/next/no-img-element
                           <img
@@ -748,26 +1136,124 @@ export function CharacterFormClient({ mode, characterId, initialData }: Props) {
                             className="h-full w-full rounded-lg object-cover"
                           />
                         ) : null}
-                        <button
-                          type="button"
-                          onClick={() => removeAsset(asset.localId)}
-                          className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full bg-black/60 text-xs text-white opacity-0 transition-opacity group-hover:opacity-100"
-                        >
-                          ×
-                        </button>
+                        {/* 카드 하단 제목 */}
+                        <div className="absolute bottom-0 left-0 right-0 rounded-b-lg bg-black/50 px-1.5 py-1 text-center">
+                          <span className="block truncate text-[10px] text-white">
+                            {asset.title?.trim() || "제목 없음"}
+                          </span>
+                        </div>
                       </div>
                     );
                   })}
                 </div>
               )}
 
-              <button
-                type="button"
-                onClick={() => assetInputRef.current?.click()}
-                className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-dashed border-zinc-300 py-4 text-sm text-zinc-500 hover:border-zinc-400 hover:text-zinc-700 dark:border-zinc-700 dark:hover:border-zinc-500 dark:hover:text-zinc-300"
-              >
-                + 이미지 추가
-              </button>
+              {/* 에셋 편집 모달 */}
+              {editingAsset && (
+                <div
+                  className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+                  onClick={() => { setEditingAsset(null); setAssetModalError(null); }}
+                >
+                  <div
+                    className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-xl dark:bg-zinc-900"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    {/* 이미지 미리보기 */}
+                    {(editingAsset.preview ?? editingAsset.url) && (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={editingAsset.preview ?? editingAsset.url}
+                        alt=""
+                        className="mb-4 h-48 w-full rounded-xl object-cover"
+                      />
+                    )}
+
+                    {/* 제목 입력 */}
+                    <div className="mb-3">
+                      <label className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-300">
+                        이미지 제목 <span className="text-red-400">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        maxLength={50}
+                        value={editingAsset.title ?? ""}
+                        onChange={(e) => setEditingAsset((prev) => prev ? { ...prev, title: e.target.value } : prev)}
+                        placeholder="예: 기본 표정"
+                        className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-800 outline-none focus:border-zinc-500 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
+                      />
+                      <p className="mt-1 text-right text-[10px] text-zinc-400">{(editingAsset.title ?? "").length}/50</p>
+                    </div>
+
+                    {/* 프롬프트 키워드 입력 */}
+                    <div className="mb-4">
+                      <label className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-300">
+                        출력 키워드 <span className="text-red-400">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        maxLength={50}
+                        value={editingAsset.keyword ?? ""}
+                        onChange={(e) => {
+                          setEditingAsset((prev) => prev ? { ...prev, keyword: e.target.value } : prev);
+                          setAssetModalError(null);
+                        }}
+                        placeholder="예: 기쁨, 슬픔, 전투씬"
+                        className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-800 outline-none focus:border-zinc-500 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
+                      />
+                      <div className="mt-1 flex items-center justify-between">
+                        <p className="text-[10px] text-zinc-400">AI가 이 키워드를 감지하면 해당 이미지를 출력합니다.</p>
+                        <p className="text-[10px] text-zinc-400">{(editingAsset.keyword ?? "").length}/50</p>
+                      </div>
+                    </div>
+
+                    {/* 에러 메시지 */}
+                    {assetModalError && (
+                      <p className="mb-3 text-xs text-red-500">{assetModalError}</p>
+                    )}
+
+                    {/* 버튼 */}
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          removeAsset(editingAsset.localId);
+                          setEditingAsset(null);
+                          setAssetModalError(null);
+                        }}
+                        className="flex-1 rounded-lg border border-red-300 py-2 text-sm text-red-500 hover:bg-red-50 dark:border-red-700 dark:hover:bg-red-950"
+                      >
+                        삭제
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (!editingAsset.title?.trim()) {
+                            setAssetModalError("제목을 입력해주세요.");
+                            return;
+                          }
+                          if (!editingAsset.keyword?.trim()) {
+                            setAssetModalError("출력 키워드를 입력해주세요.");
+                            return;
+                          }
+                          setAssets((prev) =>
+                            prev.map((a) =>
+                              a.localId === editingAsset.localId
+                                ? { ...a, title: editingAsset.title, keyword: editingAsset.keyword }
+                                : a
+                            )
+                          );
+                          setEditingAsset(null);
+                          setAssetModalError(null);
+                        }}
+                        className="flex-1 rounded-lg bg-zinc-900 py-2 text-sm text-white hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
+                      >
+                        저장
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               <input
                 ref={assetInputRef}
                 type="file"

@@ -1,7 +1,6 @@
 import { cookies } from "next/headers";
 import { createServerClient } from "@supabase/ssr";
 import { ExploreClient } from "./ExploreClient";
-import { BottomNav } from "../BottomNav";
 
 function getSupabaseEnv() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -108,7 +107,6 @@ export default async function ExplorePage({
           <ExploreClient initial={filtered} query={query} />
         </div>
       </main>
-      <BottomNav />
     </div>
   );
 }

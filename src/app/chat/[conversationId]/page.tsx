@@ -18,7 +18,7 @@ import { replaceVariables } from "../../lib/replaceVariables";
 
 type Message = {
   id: string;
-  role: "user" | "assistant";
+  role: "user" | "assistant" | "loading";
   content: string;
   created_at: string;
   model?: string | null;
@@ -30,6 +30,16 @@ function ModelHeartIcon({ model }: { model?: string | null }) {
     <svg width="14" height="14" viewBox="0 0 24 24" fill={color} xmlns="http://www.w3.org/2000/svg">
       <path d="M12 21.593c-.525-.507-5.453-5.017-7.005-6.938C2.464 11.977 2 10.025 2 8.196 2 4.771 4.812 2 8.286 2c1.773 0 3.416.808 4.714 2.136C14.298 2.808 15.941 2 17.714 2 21.188 2 24 4.771 24 8.196c0 1.83-.464 3.78-2.995 6.459-1.552 1.921-6.48 6.431-7.005 6.938l-1 .948-1-.948z" />
     </svg>
+  );
+}
+
+function TypingIndicator() {
+  return (
+    <div className="inline-flex gap-1 items-center px-4 py-3">
+      <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: "0ms" }} />
+      <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: "150ms" }} />
+      <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: "300ms" }} />
+    </div>
   );
 }
 
@@ -397,6 +407,9 @@ export default function ChatPage() {
   const [savingEdit, setSavingEdit] = useState(false);
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const editTextareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const streamingReaderRef = useRef<ReadableStreamDefaultReader<Uint8Array> | null>(null);
+  const typingQueueRef = useRef<string[]>([]);
+  const isTypingRef = useRef(false);
 
   useEffect(() => {
     async function loadMessages() {
@@ -514,6 +527,17 @@ export default function ChatPage() {
     el.style.height = `${Math.max(200, el.scrollHeight)}px`;
   }
 
+  async function handleStop() {
+    typingQueueRef.current = [];
+    isTypingRef.current = false;
+    if (streamingReaderRef.current) {
+      try { await streamingReaderRef.current.cancel(); } catch { /* ignore */ }
+      streamingReaderRef.current = null;
+    }
+    setMessages((prev) => prev.filter((m) => !m.id.startsWith("temp-")));
+    setLoading(false);
+  }
+
   async function handleSend(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const text = input.trim();
@@ -522,53 +546,113 @@ export default function ChatPage() {
     setLoading(true);
     setError(null);
 
-    const userMessage: Message = {
-      id: `temp-${Date.now()}`,
-      role: "user",
-      content: text,
-      created_at: new Date().toISOString(),
-    };
-    setMessages((prev) => [...prev, userMessage]);
+    const userTempId = `temp-${Date.now()}`;
+    const assistantTempId = `temp-assistant-${Date.now()}`;
+
+    // ① 유저 메시지 + ② 로딩 말풍선 추가
+    const loadingTempId = `temp-loading-${Date.now()}`;
+    setMessages((prev) => [
+      ...prev,
+      { id: userTempId, role: "user", content: text, created_at: new Date().toISOString() },
+      { id: loadingTempId, role: "loading", content: "", created_at: new Date().toISOString() },
+    ]);
     setInput("");
 
-    try {
-      const requestBody = {
-        character_id: characterId,
-        conversation_id: conversationId,
-        message: text,
-        model: selectedModel,
-        active_persona_id: activePersonaId ?? undefined,
-        user_note: userNote.trim() || undefined,
-      };
-      console.log("[chat] request body", requestBody);
+    // React가 렌더링할 시간을 주고 fetch 호출
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
 
+    try {
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(requestBody),
+        body: JSON.stringify({
+          character_id: characterId,
+          conversation_id: conversationId,
+          message: text,
+          model: selectedModel,
+          active_persona_id: activePersonaId ?? undefined,
+          user_note: userNote.trim() || undefined,
+        }),
       });
-      const data = (await res.json()) as { reply?: string; error?: string };
-      console.log("[chat] response", data);
 
-      if (!res.ok || !data.reply) {
-        const msg = data.error ?? "메시지를 보내는 중 오류가 발생했습니다.";
-        setError(msg);
+      if (!res.ok || !res.body) {
+        const data = (await res.json()) as { error?: string };
+        setError(data.error ?? "메시지를 보내는 중 오류가 발생했습니다.");
+        setMessages((prev) => prev.filter((m) => m.id !== userTempId && m.id !== loadingTempId));
         return;
       }
 
-      const assistantMessage: Message = {
-        id: `temp-assistant-${Date.now()}`,
-        role: "assistant",
-        content: data.reply,
-        created_at: new Date().toISOString(),
-        model: selectedModel,
-      };
+      const reader = res.body.getReader();
+      streamingReaderRef.current = reader;
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let firstChunk = true;
 
-      setMessages((prev) => [...prev, assistantMessage]);
+      // 타이핑 큐 초기화
+      typingQueueRef.current = [];
+      isTypingRef.current = false;
+
+      // 글자 하나씩 타이핑 — 마지막 assistant 메시지에 추가
+      async function processQueue() {
+        if (isTypingRef.current) return;
+        isTypingRef.current = true;
+        while (typingQueueRef.current.length > 0) {
+          const char = typingQueueRef.current.shift()!;
+          setMessages((prev) => {
+            const updated = [...prev];
+            for (let i = updated.length - 1; i >= 0; i--) {
+              if (updated[i].role === "assistant") {
+                updated[i] = { ...updated[i], content: updated[i].content + char };
+                break;
+              }
+            }
+            return updated;
+          });
+          await new Promise<void>((resolve) => setTimeout(resolve, 8));
+        }
+        isTypingRef.current = false;
+      }
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
+
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          const jsonStr = line.slice(6).trim();
+          if (!jsonStr) continue;
+          try {
+            const data = JSON.parse(jsonStr) as { text?: string; done?: boolean; error?: string };
+            if (data.error) {
+              setError(data.error);
+            }
+            if (data.text) {
+              if (firstChunk) {
+                firstChunk = false;
+                // loading 메시지 → assistant 메시지로 교체 (원자적 업데이트)
+                setMessages((prev) => prev.map((m) =>
+                  m.id === loadingTempId
+                    ? { id: assistantTempId, role: "assistant" as const, content: "", created_at: new Date().toISOString(), model: selectedModel }
+                    : m
+                ));
+              }
+              typingQueueRef.current.push(...data.text.split(""));
+              void processQueue();
+            }
+          } catch { /* ignore */ }
+        }
+      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : "네트워크 오류가 발생했습니다.";
       setError(msg);
     } finally {
+      streamingReaderRef.current = null;
+      // 혹시 남은 loading 메시지 제거
+      setMessages((prev) => prev.filter((m) => m.role !== "loading"));
       setLoading(false);
     }
   }
@@ -629,7 +713,7 @@ export default function ChatPage() {
                   style={{ isolation: "isolate" }}
                 >
                   {/* AI 말풍선 위 캐릭터 정보 */}
-                  {m.role === "assistant" && (
+                  {(m.role === "assistant" || m.role === "loading") && (
                     <div className="mb-1.5 flex w-full items-center gap-2">
                       <div className="h-8 w-8 flex-shrink-0">
                         {characterThumbnail ? (
@@ -655,9 +739,9 @@ export default function ChatPage() {
 
                   {/* 말풍선 */}
                   <div
-                    className={`min-w-0 overflow-hidden rounded-2xl px-3 py-2 ${
-                      m.role === "user" ? "rounded-br-none" : "rounded-bl-none"
-                    }`}
+                    className={`rounded-2xl ${
+                      m.role === "loading" ? "w-fit" : "min-w-0 overflow-hidden px-3 py-2"
+                    } ${m.role === "user" ? "rounded-br-none" : "rounded-bl-none"}`}
                     style={{
                       backgroundColor:
                         m.role === "user" ? fontSettings.userBubbleBg : fontSettings.aiBubbleBg,
@@ -666,7 +750,9 @@ export default function ChatPage() {
                       fontSize: fontSettings.fontSize,
                     }}
                   >
-                    {editId === m.id ? (
+                    {m.role === "loading" ? (
+                      <TypingIndicator />
+                    ) : editId === m.id ? (
                       <div className="w-full">
                         <div className="relative">
                           <textarea
@@ -717,8 +803,8 @@ export default function ChatPage() {
                     )}
                   </div>
 
-                  {/* ... 버튼: 유저=우측 하단, AI=좌측 하단 */}
-                  {editId !== m.id && (
+                  {/* ... 버튼: 유저=우측 하단, AI=좌측 하단 (loading 제외) */}
+                  {editId !== m.id && m.role !== "loading" && (
                     <div className={`absolute bottom-0 z-20 translate-y-full pt-1 opacity-0 transition-opacity group-hover:opacity-100 ${m.role === "user" ? "right-0" : "left-0"}`}>
                       <button
                         type="button"
@@ -771,16 +857,27 @@ export default function ChatPage() {
             rows={2}
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            className="flex-1 resize-none rounded-lg border border-[#E0E0E0] bg-white px-3 py-2 text-sm outline-none focus:border-[#666666]"
+            disabled={loading}
+            className="flex-1 resize-none rounded-lg border border-[#E0E0E0] bg-white px-3 py-2 text-sm outline-none focus:border-[#666666] disabled:opacity-60"
             placeholder="메시지를 입력하세요..."
           />
-          <button
-            type="submit"
-            disabled={loading || !input.trim()}
-            className="h-[42px] self-end rounded-lg bg-[#1A1A2E] px-4 text-sm font-medium text-white disabled:opacity-60"
-          >
-            {loading ? "전송 중..." : "전송"}
-          </button>
+          {loading ? (
+            <button
+              type="button"
+              onClick={() => void handleStop()}
+              className="h-[42px] self-end rounded-lg bg-red-500 px-4 text-sm font-medium text-white hover:bg-red-600"
+            >
+              중지
+            </button>
+          ) : (
+            <button
+              type="submit"
+              disabled={!input.trim()}
+              className="h-[42px] self-end rounded-lg bg-[#1A1A2E] px-4 text-sm font-medium text-white disabled:opacity-60"
+            >
+              전송
+            </button>
+          )}
           </div>
         </form>
       </main>

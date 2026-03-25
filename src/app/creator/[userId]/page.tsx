@@ -2,7 +2,6 @@ import { cookies } from "next/headers";
 import { notFound } from "next/navigation";
 import { createServerClient } from "@supabase/ssr";
 import { CreatorProfileClient } from "./CreatorProfileClient";
-import { BottomNav } from "../../BottomNav";
 
 function getSupabaseEnv() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -113,7 +112,6 @@ export default async function CreatorProfilePage({
         initialFollowerCount={followerCount ?? 0}
         initialFollowingCount={followingCount ?? 0}
       />
-      <BottomNav />
     </div>
   );
 }

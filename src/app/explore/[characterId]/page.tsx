@@ -2,7 +2,6 @@ import { cookies } from "next/headers";
 import { notFound } from "next/navigation";
 import { createServerClient } from "@supabase/ssr";
 import { CharacterDetailClient } from "./CharacterDetailClient";
-import { BottomNav } from "../../BottomNav";
 
 function getSupabaseEnv() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -171,7 +170,6 @@ export default async function CharacterDetailPage({
         isCharacterOwner={user?.id === character.user_id}
         userName={userName}
       />
-      <BottomNav />
     </div>
   );
 }

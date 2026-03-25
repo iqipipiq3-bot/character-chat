@@ -93,6 +93,26 @@ export function HeaderClient({ displayName, isLoggedIn, avatarUrl }: Props) {
         CC
       </Link>
 
+      {/* 헤더 탭 */}
+      <nav className="hidden md:flex items-center gap-1 shrink-0">
+        {[
+          { href: "/explore", label: "공개 캐릭터" },
+          { href: "/dashboard", label: "제작 스튜디오" },
+        ].map((tab) => (
+          <Link
+            key={tab.href}
+            href={tab.href}
+            className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
+              pathname === tab.href || pathname?.startsWith(tab.href + "/")
+                ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900"
+                : "text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
+            }`}
+          >
+            {tab.label}
+          </Link>
+        ))}
+      </nav>
+
       {/* 검색창 */}
       <form onSubmit={handleSearchSubmit} className="min-w-0 ml-auto w-full max-w-sm">
         <div className="relative">
