@@ -80,7 +80,7 @@ export default function EditCharacterPage() {
           tags: (char.tags as string[] | null) ?? [],
           scenarios,
           assets: (assets ?? []) as { id: string; url: string }[],
-          lorebooks: (lorebooks ?? []) as { id: string; title: string; keyword: string; content: string }[],
+          lorebooks: (lorebooks ?? []) as { id: string; title: string; keyword: string[]; content: string }[],
           creatorComment: (charExtra?.creator_comment as string | null) ?? "",
           targetGender: (charExtra?.target_gender as string | null) ?? "",
           ageRating: (charExtra?.age_rating as string | null) ?? "",

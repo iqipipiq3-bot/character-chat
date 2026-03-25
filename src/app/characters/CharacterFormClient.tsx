@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createSupabaseBrowserClient } from "../lib/supabase";
 import { MarkdownEditor } from "../components/MarkdownEditor";
+import { MarkdownRenderer } from "../components/MarkdownRenderer";
 import { convertToWebP } from "../lib/convertToWebP";
 import { CharacterCard } from "../components/CharacterCard";
 
@@ -33,7 +34,7 @@ type LorebookItem = {
   localId: string;
   id?: string;
   title: string;
-  keyword: string;
+  keyword: string[];
   content: string;
 };
 
@@ -52,7 +53,7 @@ export type CharacterFormInitialData = {
   tags: string[];
   scenarios: { id: string; name: string; greeting: string; prompt: string }[];
   assets: { id: string; url: string; title?: string; keyword?: string }[];
-  lorebooks: { id: string; title: string; keyword: string; content: string }[];
+  lorebooks: { id: string; title: string; keyword: string[]; content: string }[];
   creatorComment: string;
   targetGender: string;
   ageRating: string;
@@ -140,6 +141,9 @@ export function CharacterFormClient({ mode, characterId, initialData }: Props) {
       ? initialData.scenarios.map((s) => ({ ...s, localId: s.id }))
       : [{ localId: crypto.randomUUID(), name: "", greeting: "", prompt: "" }]
   );
+  const [activeScenarioId, setActiveScenarioId] = useState<string>(
+    () => initialData?.scenarios?.[0]?.id ?? scenarios[0]?.localId ?? ""
+  );
 
   // ── Assets ──
   const assetInputRef = useRef<HTMLInputElement>(null);
@@ -156,6 +160,7 @@ export function CharacterFormClient({ mode, characterId, initialData }: Props) {
   );
 
   const MAX_LOREBOOKS = 20;
+  const [loreKeywordInputs, setLoreKeywordInputs] = useState<Record<string, string>>({});
   const [expandedLoreIds, setExpandedLoreIds] = useState<Set<string>>(
     () => new Set((initialData?.lorebooks ?? []).map((l) => l.id))
   );
@@ -222,8 +227,29 @@ export function CharacterFormClient({ mode, characterId, initialData }: Props) {
     setAssets((prev) => prev.filter((a) => a.localId !== localId));
   }
 
-  function updateLorebook(localId: string, field: "title" | "keyword" | "content", value: string) {
+  function updateLorebook(localId: string, field: "title" | "content", value: string) {
     setLorebooks((prev) => prev.map((l) => (l.localId === localId ? { ...l, [field]: value } : l)));
+  }
+
+  function addLorebookKeyword(localId: string, kw: string) {
+    setLorebooks((prev) =>
+      prev.map((l) =>
+        l.localId === localId && l.keyword.length < 5 && !l.keyword.includes(kw)
+          ? { ...l, keyword: [...l.keyword, kw] }
+          : l
+      )
+    );
+    setLoreKeywordInputs((prev) => ({ ...prev, [localId]: "" }));
+  }
+
+  function removeLorebookKeyword(localId: string, idx: number) {
+    setLorebooks((prev) =>
+      prev.map((l) =>
+        l.localId === localId
+          ? { ...l, keyword: l.keyword.filter((_, i) => i !== idx) }
+          : l
+      )
+    );
   }
 
   function toggleLoreExpand(localId: string) {
@@ -510,13 +536,13 @@ export function CharacterFormClient({ mode, characterId, initialData }: Props) {
         .eq("character_id", charId!);
       if (delLoreErr) console.error("[save] lorebooks delete failed:", delLoreErr);
 
-      const validLorebooks = lorebooks.filter((l) => l.keyword.trim() && l.content.trim());
+      const validLorebooks = lorebooks.filter((l) => l.keyword.length > 0 && l.content.trim());
       if (validLorebooks.length > 0) {
         const { error: loreErr } = await supabase.from("character_lorebooks").insert(
           validLorebooks.map((l, idx) => ({
             character_id: charId!,
             title: l.title.trim() || null,
-            keyword: l.keyword.trim(),
+            keyword: l.keyword,
             content: l.content.trim(),
             order: idx,
           }))
@@ -539,7 +565,7 @@ export function CharacterFormClient({ mode, characterId, initialData }: Props) {
   const previewThumb = thumbPreview ?? thumbUrl ?? null;
   const previewName = name || "캐릭터 이름";
   const previewDesc = description || "한줄 소개가 여기에 표시됩니다.";
-  const previewGreeting = scenarios[0]?.greeting || "첫 인사말이 여기에 표시됩니다.";
+  const previewGreeting = (scenarios.find((s) => s.localId === activeScenarioId) ?? scenarios[0])?.greeting || "첫 인사말이 여기에 표시됩니다.";
 
   return (
     <div className="min-h-screen bg-zinc-50 text-zinc-900 dark:bg-black dark:text-zinc-50">
@@ -956,103 +982,112 @@ export function CharacterFormClient({ mode, characterId, initialData }: Props) {
             <>
             {/* 왼쪽: 폼 */}
             <div className="space-y-4 self-start">
+
+              {/* 시나리오 탭 바 */}
+              <div className="flex items-center gap-1 border-b border-zinc-200 dark:border-zinc-800">
                 {scenarios.map((scenario, i) => (
-                  <div
-                    key={scenario.localId}
-                    className="rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900"
-                  >
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                        시작 상황 {i + 1}
-                      </span>
-                      {scenarios.length > 1 && (
-                        <button
-                          type="button"
-                          onClick={() =>
-                            setScenarios((p) => p.filter((s) => s.localId !== scenario.localId))
-                          }
-                          className="text-xs text-red-500 hover:text-red-600"
+                  <div key={scenario.localId} className="relative flex items-center">
+                    <button
+                      type="button"
+                      onClick={() => setActiveScenarioId(scenario.localId)}
+                      className={`flex items-center gap-1.5 rounded-t-lg px-3 py-2 text-xs font-medium transition-colors ${
+                        activeScenarioId === scenario.localId
+                          ? "border border-b-white border-zinc-200 bg-white text-zinc-800 dark:border-zinc-700 dark:border-b-zinc-950 dark:bg-zinc-950 dark:text-zinc-100"
+                          : "text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-300"
+                      }`}
+                    >
+                      {scenario.name.trim() || `시작 상황 ${i + 1}`}
+                      {i > 0 && (
+                        <span
+                          role="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const prev = scenarios[i - 1].localId;
+                            setScenarios((p) => p.filter((s) => s.localId !== scenario.localId));
+                            setActiveScenarioId(prev);
+                          }}
+                          className="ml-0.5 flex h-3.5 w-3.5 items-center justify-center rounded-full text-zinc-400 hover:bg-zinc-200 hover:text-zinc-600 dark:hover:bg-zinc-700 dark:hover:text-zinc-300"
                         >
-                          삭제
-                        </button>
+                          ×
+                        </span>
                       )}
-                    </div>
-
-                    <div className="mt-3 space-y-3">
-                      <div>
-                        <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400">
-                          상황 이름 <span className="text-red-500">*</span>
-                        </label>
-                        <input
-                          type="text"
-                          value={scenario.name}
-                          onChange={(e) => updateScenario(scenario.localId, "name", e.target.value)}
-                          placeholder="예: 첫 만남"
-                          className={`mt-1 ${INPUT}`}
-                        />
-                      </div>
-
-                      <div>
-                        <div className="flex items-baseline justify-between">
-                          <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400">
-                            첫 인사말 <span className="text-red-500">*</span>
-                          </label>
-                          <span className="text-[11px] text-zinc-400">
-                            {scenario.greeting.length}/1,000
-                          </span>
-                        </div>
-                        <p className="mt-0.5 text-[11px] text-zinc-400">
-                          대화 시작 시 캐릭터가 먼저 보내는 메시지
-                        </p>
-                        <textarea
-                          rows={3}
-                          value={scenario.greeting}
-                          onChange={(e) => updateScenario(scenario.localId, "greeting", cap(e.target.value, 1000))}
-                          placeholder={`예: *조용한 도서관 구석, 낡은 책들 사이에서 당신을 발견한다.*\n"어서 오세요. 무엇을 찾으시나요?"`}
-                          className={`mt-1 resize-none ${INPUT}`}
-                        />
-                      </div>
-
-                      <div>
-                        <div className="flex items-baseline justify-between">
-                          <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400">
-                            시작 프롬프트 <span className="text-red-500">*</span>
-                          </label>
-                          <span className="text-[11px] text-zinc-400">
-                            {scenario.prompt.length}/1,000
-                          </span>
-                        </div>
-                        <p className="mt-0.5 text-[11px] text-zinc-400">
-                          대화 시작 후 20턴까지만 적용되는 휘발성 프롬프트
-                        </p>
-                        <textarea
-                          rows={4}
-                          value={scenario.prompt}
-                          onChange={(e) => updateScenario(scenario.localId, "prompt", cap(e.target.value, 1000))}
-                          placeholder="예: 대화 초반에는 공식적이고 조심스러운 태도를 유지한다. 아직 서로 모르는 사이이므로 친밀한 호칭은 사용하지 않는다."
-                          className={`mt-1 resize-none ${INPUT}`}
-                        />
-                      </div>
-                    </div>
+                    </button>
                   </div>
                 ))}
+                {scenarios.length < 3 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const newId = crypto.randomUUID();
+                      setScenarios((p) => [...p, { localId: newId, name: "", greeting: "", prompt: "" }]);
+                      setActiveScenarioId(newId);
+                    }}
+                    className="px-2 py-2 text-xs text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300"
+                  >
+                    + 추가
+                  </button>
+                )}
+              </div>
 
-              {scenarios.length < 3 ? (
-                <button
-                  type="button"
-                  onClick={() =>
-                    setScenarios((p) => [
-                      ...p,
-                      { localId: crypto.randomUUID(), name: "", greeting: "", prompt: "" },
-                    ])
-                  }
-                  className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-dashed border-zinc-300 py-3 text-sm text-zinc-500 hover:border-zinc-400 hover:text-zinc-700 dark:border-zinc-700 dark:hover:border-zinc-500 dark:hover:text-zinc-300"
-                >
-                  + 시작 상황 추가 ({scenarios.length}/3)
-                </button>
-              ) : (
-                <p className="text-center text-xs text-zinc-400">시작 상황은 최대 3개까지 만들 수 있습니다.</p>
-              )}
+              {/* 활성 시나리오 폼 */}
+              {scenarios.map((scenario) => (
+                scenario.localId !== activeScenarioId ? null : (
+                  <div key={scenario.localId} className="space-y-3">
+                    <div>
+                      <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                        상황 이름 <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={scenario.name}
+                        onChange={(e) => updateScenario(scenario.localId, "name", e.target.value)}
+                        placeholder="예: 첫 만남"
+                        className={`mt-1 ${INPUT}`}
+                      />
+                    </div>
+
+                    <div>
+                      <div className="flex items-baseline justify-between">
+                        <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                          첫 인사말 <span className="text-red-500">*</span>
+                        </label>
+                        <span className="text-[11px] text-zinc-400">
+                          {scenario.greeting.length}/1,000
+                        </span>
+                      </div>
+                      <p className="mt-0.5 text-[11px] text-zinc-400">
+                        대화 시작 시 캐릭터가 먼저 보내는 메시지
+                      </p>
+                      <textarea
+                        value={scenario.greeting}
+                        onChange={(e) => updateScenario(scenario.localId, "greeting", cap(e.target.value, 1000))}
+                        placeholder={`예: *조용한 도서관 구석, 낡은 책들 사이에서 당신을 발견한다.*\n"어서 오세요. 무엇을 찾으시나요?"`}
+                        className={`mt-1 min-h-[150px] resize-y ${INPUT}`}
+                      />
+                    </div>
+
+                    <div>
+                      <div className="flex items-baseline justify-between">
+                        <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                          시작 프롬프트 <span className="text-red-500">*</span>
+                        </label>
+                        <span className="text-[11px] text-zinc-400">
+                          {scenario.prompt.length}/1,000
+                        </span>
+                      </div>
+                      <p className="mt-0.5 text-[11px] text-zinc-400">
+                        대화 시작 후 20턴까지만 적용되는 휘발성 프롬프트
+                      </p>
+                      <textarea
+                        value={scenario.prompt}
+                        onChange={(e) => updateScenario(scenario.localId, "prompt", cap(e.target.value, 1000))}
+                        placeholder="예: 대화 초반에는 공식적이고 조심스러운 태도를 유지한다. 아직 서로 모르는 사이이므로 친밀한 호칭은 사용하지 않는다."
+                        className={`mt-1 min-h-[400px] resize-y ${INPUT}`}
+                      />
+                    </div>
+                  </div>
+                )
+              ))}
             </div>{/* 왼쪽 끝 */}
 
             {/* 오른쪽: 미리보기 */}
@@ -1078,7 +1113,14 @@ export function CharacterFormClient({ mode, characterId, initialData }: Props) {
                     <div className="flex-1">
                       <p className="mb-1 text-[11px] font-medium text-zinc-600 dark:text-zinc-300">{previewName}</p>
                       <div className="rounded-2xl rounded-tl-none bg-zinc-100 px-3 py-2 dark:bg-zinc-800">
-                        <p className="whitespace-pre-wrap text-xs text-zinc-800 dark:text-zinc-100">{previewGreeting}</p>
+                        <MarkdownRenderer
+                          content={previewGreeting}
+                          components={{
+                            em: ({ children }) => (
+                              <em style={{ color: "#888888", fontStyle: "normal" }}>{children}</em>
+                            ),
+                          }}
+                        />
                       </div>
                     </div>
                   </div>
@@ -1329,11 +1371,11 @@ export function CharacterFormClient({ mode, characterId, initialData }: Props) {
                             className="flex flex-1 items-center gap-2 overflow-hidden text-left"
                           >
                             <span className="flex-1 truncate text-xs font-medium text-zinc-700 dark:text-zinc-300">
-                              {entry.title.trim() || entry.keyword.trim() || "제목 없음"}
+                              {entry.title.trim() || entry.keyword[0] || "제목 없음"}
                             </span>
-                            {!isExpanded && entry.keyword.trim() ? (
+                            {!isExpanded && entry.keyword.length > 0 ? (
                               <span className="shrink-0 rounded bg-zinc-100 px-1.5 py-0.5 text-[11px] text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400">
-                                {entry.keyword.trim()}
+                                {entry.keyword[0]}{entry.keyword.length > 1 ? ` +${entry.keyword.length - 1}` : ""}
                               </span>
                             ) : null}
                             <svg
@@ -1376,15 +1418,43 @@ export function CharacterFormClient({ mode, characterId, initialData }: Props) {
                             </div>
                             <div>
                               <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400">
-                                키워드
+                                키워드 (최대 5개)
                               </label>
-                              <input
-                                type="text"
-                                value={entry.keyword}
-                                onChange={(e) => updateLorebook(entry.localId, "keyword", e.target.value)}
-                                placeholder="예: 마법의 탑"
-                                className={`mt-1 ${INPUT}`}
-                              />
+                              <div className="mt-1 flex flex-wrap gap-1.5">
+                                {entry.keyword.map((kw, idx) => (
+                                  <span
+                                    key={idx}
+                                    className="flex items-center gap-1 rounded-md bg-zinc-100 px-2 py-1 text-xs text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"
+                                  >
+                                    {kw}
+                                    <button
+                                      type="button"
+                                      onClick={() => removeLorebookKeyword(entry.localId, idx)}
+                                      className="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200"
+                                    >
+                                      ×
+                                    </button>
+                                  </span>
+                                ))}
+                                {entry.keyword.length < 5 && (
+                                  <input
+                                    type="text"
+                                    value={loreKeywordInputs[entry.localId] ?? ""}
+                                    onChange={(e) =>
+                                      setLoreKeywordInputs((prev) => ({ ...prev, [entry.localId]: e.target.value }))
+                                    }
+                                    onKeyDown={(e) => {
+                                      if (e.key === "Enter") {
+                                        e.preventDefault();
+                                        const kw = (loreKeywordInputs[entry.localId] ?? "").trim();
+                                        if (kw) addLorebookKeyword(entry.localId, kw);
+                                      }
+                                    }}
+                                    placeholder="입력 후 Enter"
+                                    className={`min-w-[120px] flex-1 ${INPUT}`}
+                                  />
+                                )}
+                              </div>
                             </div>
                             <div>
                               <div className="flex items-baseline justify-between">
@@ -1418,7 +1488,7 @@ export function CharacterFormClient({ mode, characterId, initialData }: Props) {
                     const newId = crypto.randomUUID();
                     setLorebooks((p) => [
                       ...p,
-                      { localId: newId, title: "", keyword: "", content: "" },
+                      { localId: newId, title: "", keyword: [], content: "" },
                     ]);
                     setExpandedLoreIds((p) => new Set([...p, newId]));
                   }}

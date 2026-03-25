@@ -42,21 +42,30 @@ const MODEL_CONFIG: Record<string, {
   maxOutputTokens: number;
   temperature: number;
   topP: number;
-  thinkingBudget: number;
+  topK: number;
+  presencePenalty: number;
+  thinkingBudget: number | null;
+  thinkingLevel: string | null;
   systemSuffix: string;
 }> = {
   "gemini-2.5-pro": {
     maxOutputTokens: 8000,
     temperature: 0.95,
     topP: 0.95,
+    topK: 40,
+    presencePenalty: 0.2,
     thinkingBudget: 500,
+    thinkingLevel: null,
     systemSuffix: "",
   },
   "gemini-3.1-pro-preview": {
     maxOutputTokens: 8000,
     temperature: 1.00,
     topP: 0.95,
-    thinkingBudget: 100,
+    topK: 40,
+    presencePenalty: 0.2,
+    thinkingBudget: null,
+    thinkingLevel: "medium",
     systemSuffix: `
 # 출력 길이 규칙
 - 응답은 반드시 충분한 분량으로 작성할 것. 짧은 응답은 허용되지 않음.
@@ -229,7 +238,7 @@ export async function POST(request: NextRequest) {
       .toLowerCase();
 
     const matchingLorebooks = (lorebooks ?? [])
-      .filter((l) => allText.includes((l.keyword as string).toLowerCase()))
+      .filter((l) => (l.keyword as string[]).some((kw) => allText.includes(kw.toLowerCase())))
       .slice(0, 5);
 
     const lorebookSection =
@@ -315,8 +324,12 @@ ${userNoteSection}${lorebookSection}
         maxOutputTokens: modelCfg.maxOutputTokens,
         temperature: modelCfg.temperature,
         topP: modelCfg.topP,
+        topK: modelCfg.topK,
+        presencePenalty: modelCfg.presencePenalty,
         // thinkingConfig는 미래 버전 SDK에서 지원 예정, any로 우회
-        thinkingConfig: { thinkingBudget: modelCfg.thinkingBudget },
+        thinkingConfig: modelCfg.thinkingLevel !== null
+          ? { thinkingLevel: modelCfg.thinkingLevel }
+          : { thinkingBudget: modelCfg.thinkingBudget },
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
       } as any,
       safetySettings: [

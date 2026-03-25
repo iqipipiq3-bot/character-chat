@@ -1,10 +1,10 @@
 "use client";
 
-import Markdown from "react-markdown";
+import Markdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkBreaks from "remark-breaks";
 
-export function MarkdownRenderer({ content }: { content: string }) {
+export function MarkdownRenderer({ content, components: componentOverrides }: { content: string; components?: Components }) {
   if (!content.trim()) return null;
 
   return (
@@ -64,6 +64,7 @@ export function MarkdownRenderer({ content }: { content: string }) {
           td: (props) => (
             <td className="border border-zinc-200 px-3 py-1.5 dark:border-zinc-700">{props.children}</td>
           ),
+          ...componentOverrides,
         }}
       >
         {content}
