@@ -51,7 +51,11 @@ export default async function RootLayout({
 
   let displayName: string | null = null;
   let avatarUrl: string | null = null;
+  let userId: string | null = null;
+  let followerCount = 0;
+  let followingCount = 0;
   if (user) {
+    userId = user.id;
     const { data: profile } = await supabase
       .from("profiles")
       .select("nickname, avatar_url")
@@ -67,13 +71,34 @@ export default async function RootLayout({
     } else {
       displayName = "사용자";
     }
+
+    // 팔로워 수 (나를 팔로우하는 사람)
+    const { count: fwrCount } = await supabase
+      .from("follows")
+      .select("*", { count: "exact", head: true })
+      .eq("following_id", user.id);
+    followerCount = fwrCount ?? 0;
+
+    // 팔로잉 수 (내가 팔로우하는 사람)
+    const { count: fwingCount } = await supabase
+      .from("follows")
+      .select("*", { count: "exact", head: true })
+      .eq("follower_id", user.id);
+    followingCount = fwingCount ?? 0;
   }
 
   return (
     <html lang="ko">
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
         {/* 상단 고정 헤더 (로그인/회원가입 페이지에서는 숨김) */}
-        <HeaderShell displayName={displayName} isLoggedIn={!!user} avatarUrl={avatarUrl} />
+        <HeaderShell
+          displayName={displayName}
+          isLoggedIn={!!user}
+          avatarUrl={avatarUrl}
+          userId={userId}
+          followerCount={followerCount}
+          followingCount={followingCount}
+        />
         {/* 고정 사이드바 — /explore, /dashboard에서만 표시 */}
         <ConversationSidebar />
         {/* 헤더 높이만큼 오프셋 (로그인/회원가입 페이지에서는 패딩 없음) */}

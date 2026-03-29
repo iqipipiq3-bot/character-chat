@@ -17,9 +17,11 @@ export type FontSettings = {
   fontSize: number;
 };
 
+export const DEFAULT_AI_BUBBLE_BG = "#F4F4F2";
+
 export const DEFAULT_FONT_SETTINGS: FontSettings = {
   userBubbleBg: "#FFE0DB",
-  aiBubbleBg: "#FFFFFF",
+  aiBubbleBg: DEFAULT_AI_BUBBLE_BG,
   userFontColor: "#1A1A1A",
   aiFontColor: "#1A1A1A",
   fontSize: 16,

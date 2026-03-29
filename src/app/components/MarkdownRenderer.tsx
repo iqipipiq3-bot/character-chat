@@ -4,11 +4,11 @@ import Markdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkBreaks from "remark-breaks";
 
-export function MarkdownRenderer({ content, components: componentOverrides }: { content: string; components?: Components }) {
+export function MarkdownRenderer({ content, components: componentOverrides, className }: { content: string; components?: Components; className?: string }) {
   if (!content.trim()) return null;
 
   return (
-    <div className="text-sm leading-relaxed text-zinc-800 dark:text-zinc-200">
+    <div className={className ?? "text-sm leading-relaxed text-zinc-800 dark:text-zinc-200"}>
       <Markdown
         remarkPlugins={[remarkGfm, remarkBreaks]}
         components={{

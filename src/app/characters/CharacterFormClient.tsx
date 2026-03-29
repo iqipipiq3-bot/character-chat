@@ -550,6 +550,32 @@ export function CharacterFormClient({ mode, characterId, initialData }: Props) {
         if (loreErr) console.error("[save] lorebooks insert failed:", loreErr);
       }
 
+      try {
+        const invalidateRes = await fetch("/api/gemini-cache/invalidate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ character_id: charId }),
+        });
+
+        if (!invalidateRes.ok) {
+          const invalidateData = (await invalidateRes.json()) as { error?: string };
+          console.error("[save] remote cache invalidation failed:", invalidateData.error ?? invalidateRes.statusText);
+        }
+      } catch (cacheErr) {
+        console.error("[save] remote cache invalidation request failed:", cacheErr);
+      }
+
+      /*
+
+      // ── 6. Gemini 캐시 무효화 ─────────────────────────────────────────────
+      // 캐릭터 설정 또는 로어북 변경 시 해당 캐릭터의 모든 대화 캐시를 초기화
+      const { error: cacheInvalidErr } = await supabase
+        .from("conversations")
+        .update({ gemini_cache_id: null, cache_expires_at: null })
+        .eq("character_id", charId!);
+      if (cacheInvalidErr) console.error("[save] cache invalidation failed:", cacheInvalidErr);
+
+      */
       router.replace("/dashboard");
     } catch (e) {
       console.error("[save] unhandled error:", e);
@@ -569,7 +595,7 @@ export function CharacterFormClient({ mode, characterId, initialData }: Props) {
 
   return (
     <div className="min-h-screen bg-zinc-50 text-zinc-900 dark:bg-black dark:text-zinc-50">
-      <div className="mx-auto w-full max-w-5xl px-4 py-8">
+      <div className="w-full px-6 py-8">
 
         {/* Header */}
         <div className="flex items-center justify-between">
@@ -744,8 +770,10 @@ export function CharacterFormClient({ mode, characterId, initialData }: Props) {
 
             {/* 오른쪽: 미리보기 */}
             <div className="hidden md:block">
-              <div className="sticky top-6 space-y-4">
+              <div className="sticky top-6 space-y-2">
                 <p className="text-xs font-medium text-zinc-400 dark:text-zinc-500">미리보기</p>
+                <p className="text-[11px] text-zinc-400 dark:text-zinc-600">탐색 카드</p>
+                <div className="max-w-[280px]">
                 <CharacterCard
                   character={{
                     id: characterId ?? "preview",
@@ -755,6 +783,7 @@ export function CharacterFormClient({ mode, characterId, initialData }: Props) {
                     tags: tags.length > 0 ? tags : null,
                   }}
                 />
+                </div>
               </div>
             </div>
             </>
@@ -1504,7 +1533,7 @@ export function CharacterFormClient({ mode, characterId, initialData }: Props) {
 
           {/* ── 탭6: 등록 설정 ── */}
           {activeTab === "publish" && (
-            <>
+            <div className="w-1/2 space-y-6">
               {/* 제작자 코멘트 */}
               <div>
                 <div className="flex items-baseline justify-between">
@@ -1594,7 +1623,7 @@ export function CharacterFormClient({ mode, characterId, initialData }: Props) {
                   ))}
                 </div>
               </div>
-            </>
+            </div>
           )}
 
         </div>

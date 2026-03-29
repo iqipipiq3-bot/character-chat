@@ -4,12 +4,12 @@ import { useEffect, useRef, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { createSupabaseBrowserClient } from "../../lib/supabase";
-import ReactMarkdown from "react-markdown";
 import type { Components } from "react-markdown";
-import remarkGfm from "remark-gfm";
 import React from "react";
+import { MarkdownRenderer } from "../../components/MarkdownRenderer";
 import {
   ChatSidePanel,
+  DEFAULT_AI_BUBBLE_BG,
   DEFAULT_FONT_SETTINGS,
   type FontSettings,
   type Persona,
@@ -45,6 +45,7 @@ function TypingIndicator() {
 
 const ALLOWED_MODELS = ["gemini-2.5-pro", "gemini-3.1-pro-preview"] as const;
 type ModelId = (typeof ALLOWED_MODELS)[number];
+const LEGACY_DEFAULT_AI_BUBBLE_BG = "#FFFFFF";
 
 function extractText(node: React.ReactNode): string {
   if (typeof node === "string") return node;
@@ -89,7 +90,7 @@ function CodeBlock({ children, light = false }: { children: React.ReactNode; lig
         <div
           style={{
             background: headerBg,
-            padding: "5px 14px",
+            padding: "3px 14px",
             display: "flex",
             justifyContent: "space-between",
             alignItems: "center",
@@ -123,12 +124,14 @@ function CodeBlock({ children, light = false }: { children: React.ReactNode; lig
           </button>
         </div>
       )}
-      <pre style={{ margin: 0, padding: "6px 14px", lineHeight: 1.1 }}>
+      <pre style={{ margin: 0, padding: "7px 14px 15px" }}>
         <code
           style={{
+            display: "block",
             color: textColor,
             fontFamily: "inherit",
             fontSize: "0.85rem",
+            lineHeight: 1.55,
             whiteSpace: "pre-wrap",
             wordBreak: "break-word",
           }}
@@ -235,10 +238,20 @@ export default function ChatPage() {
     }
     const savedPersonaId = localStorage.getItem("chat_active_persona_id");
     setActivePersonaId(savedPersonaId ?? null);
-    setUserNote(localStorage.getItem("chat_user_note") ?? "");
+    setUserNote(localStorage.getItem(`chat_user_note_${conversationId}`) ?? "");
     const savedFont = localStorage.getItem("chat_font_settings");
     if (savedFont) {
-      try { setFontSettings(JSON.parse(savedFont) as FontSettings); } catch { /* ignore */ }
+      try {
+        const parsed = JSON.parse(savedFont) as FontSettings;
+        const nextFontSettings = parsed.aiBubbleBg === LEGACY_DEFAULT_AI_BUBBLE_BG
+          ? { ...parsed, aiBubbleBg: DEFAULT_AI_BUBBLE_BG }
+          : parsed;
+
+        setFontSettings(nextFontSettings);
+        localStorage.setItem("chat_font_settings", JSON.stringify(nextFontSettings));
+      } catch {
+        /* ignore */
+      }
     }
 
     window.addEventListener("chatModelChange", onModelChange);
@@ -262,7 +275,7 @@ export default function ChatPage() {
   // 유저 노트 변경 핸들러
   function handleUserNoteChange(note: string) {
     setUserNote(note);
-    localStorage.setItem("chat_user_note", note);
+    localStorage.setItem(`chat_user_note_${conversationId}`, note);
   }
 
   // 글꼴 설정 변경 핸들러
@@ -613,22 +626,67 @@ export default function ChatPage() {
         isTypingRef.current = false;
       }
 
+      async function waitForTypingToFinish() {
+        while (isTypingRef.current || typingQueueRef.current.length > 0) {
+          await new Promise<void>((resolve) => setTimeout(resolve, 10));
+        }
+      }
+
+      function handleStreamPayload(jsonStr: string) {
+        if (!jsonStr) return;
+
+        try {
+          const data = JSON.parse(jsonStr) as { text?: string; done?: boolean; error?: string };
+          if (data.error) {
+            setError(data.error);
+          }
+          if (!data.text) return;
+
+          if (firstChunk) {
+            firstChunk = false;
+            setMessages((prev) => prev.map((m) =>
+              m.id === loadingTempId
+                ? {
+                    id: assistantTempId,
+                    role: "assistant" as const,
+                    content: "",
+                    created_at: new Date().toISOString(),
+                    model: selectedModel,
+                  }
+                : m
+            ));
+          }
+
+          typingQueueRef.current.push(...data.text.split(""));
+          void processQueue();
+        } catch {
+          // ignore malformed SSE payloads
+        }
+      }
+
+      function handleSseEvent(eventChunk: string) {
+        for (const line of eventChunk.split("\n")) {
+          if (!line.startsWith("data: ")) continue;
+          handleStreamPayload(line.slice(6).trim());
+        }
+      }
+
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
 
         buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n");
-        buffer = lines.pop() ?? "";
+        const events = buffer.split("\n\n");
+        buffer = events.pop() ?? "";
 
-        for (const line of lines) {
-          if (!line.startsWith("data: ")) continue;
-          const jsonStr = line.slice(6).trim();
-          if (!jsonStr) continue;
+        for (const eventChunk of events) {
+          handleSseEvent(eventChunk);
+          const jsonStr = "";
+          continue;
           try {
             const data = JSON.parse(jsonStr) as { text?: string; done?: boolean; error?: string };
             if (data.error) {
-              setError(data.error);
+              setError(data.error ?? null);
             }
             if (data.text) {
               if (firstChunk) {
@@ -640,12 +698,20 @@ export default function ChatPage() {
                     : m
                 ));
               }
-              typingQueueRef.current.push(...data.text.split(""));
+              typingQueueRef.current.push(...(data.text ?? "").split(""));
               void processQueue();
             }
           } catch { /* ignore */ }
         }
       }
+
+      buffer += decoder.decode();
+      const remainingEvents = buffer.split("\n\n").filter((chunk) => chunk.trim());
+      for (const eventChunk of remainingEvents) {
+        handleSseEvent(eventChunk);
+      }
+
+      await waitForTypingToFinish();
     } catch (err) {
       const msg = err instanceof Error ? err.message : "네트워크 오류가 발생했습니다.";
       setError(msg);
@@ -793,12 +859,11 @@ export default function ChatPage() {
                       <div
                         className="chat-md min-w-0 break-words leading-7"
                       >
-                        <ReactMarkdown
-                          remarkPlugins={[remarkGfm]}
+                        <MarkdownRenderer
+                          content={replaceVariables(m.content ?? "", userName).replaceAll("\n", "\n\n")}
                           components={m.role === "user" ? userMdComponents : aiMdComponents}
-                        >
-                          {replaceVariables(m.content ?? "", userName).replaceAll("\n", "\n\n")}
-                        </ReactMarkdown>
+                          className="leading-relaxed"
+                        />
                       </div>
                     )}
                   </div>
@@ -898,4 +963,3 @@ export default function ChatPage() {
     </div>
   );
 }
-

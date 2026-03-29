@@ -12,7 +12,10 @@
       "Bash(cmd.exe /c \"git -C C:\\\\\\\\Users\\\\\\\\User\\\\\\\\Desktop\\\\\\\\character-chat log --oneline -10\")",
       "Bash(cmd.exe /c \"git -C C:\\\\\\\\Users\\\\\\\\User\\\\\\\\Desktop\\\\\\\\character-chat log --oneline -5 2>&1\")",
       "Bash(cmd.exe /c \"git -C C:\\\\\\\\Users\\\\\\\\User\\\\\\\\Desktop\\\\\\\\character-chat status\")",
-      "Bash(find C:UsersUserDesktopcharacter-chat -type f \\\\\\(-name *.sql -o -name *schema* -o -name *database* \\\\\\))"
+      "Bash(find C:UsersUserDesktopcharacter-chat -type f \\\\\\(-name *.sql -o -name *schema* -o -name *database* \\\\\\))",
+      "Bash(grep -n \"fontSize\\\\|font-size\\\\|fontSettings\\\\|MarkdownRenderer\\\\|role.*user\\\\|role.*assistant\\\\|role.*model\\\\|bubble\\\\|narrat\" /c/Users/User/Desktop/character-chat/src/app/chat/[conversationId]/page.tsx)",
+      "Bash(grep -n \"userNote\\\\|user_note\\\\|localStorage\" /c/Users/User/Desktop/character-chat/src/app/chat/[conversationId]/page.tsx)",
+      "Bash(grep -n \"conversationId\\\\|useParams\\\\|params\" /c/Users/User/Desktop/character-chat/src/app/chat/[conversationId]/page.tsx)"
     ]
   }
 }

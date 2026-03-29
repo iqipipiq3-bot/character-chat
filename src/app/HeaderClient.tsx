@@ -22,9 +22,12 @@ type Props = {
   displayName: string | null;
   isLoggedIn: boolean;
   avatarUrl: string | null;
+  userId: string | null;
+  followerCount: number;
+  followingCount: number;
 };
 
-export function HeaderClient({ displayName, isLoggedIn, avatarUrl }: Props) {
+export function HeaderClient({ displayName, isLoggedIn, avatarUrl, userId, followerCount, followingCount }: Props) {
   const router = useRouter();
   const pathname = usePathname();
   const isChatPage = pathname?.startsWith("/chat/") ?? false;
@@ -221,36 +224,102 @@ export function HeaderClient({ displayName, isLoggedIn, avatarUrl }: Props) {
           </button>
 
           {dropdownOpen && (
-            <div className="absolute right-0 top-full z-50 mt-1 w-40 rounded-xl border border-zinc-200 bg-white py-1 shadow-lg dark:border-zinc-800 dark:bg-zinc-950">
-              <Link
-                href="/mypage"
-                onClick={() => setDropdownOpen(false)}
-                className="block px-4 py-2 text-xs hover:bg-zinc-50 dark:hover:bg-zinc-900"
-              >
-                마이페이지
-              </Link>
-              <Link
-                href="/dashboard"
-                onClick={() => setDropdownOpen(false)}
-                className="block px-4 py-2 text-xs hover:bg-zinc-50 dark:hover:bg-zinc-900"
-              >
-                내 캐릭터
-              </Link>
-              <Link
-                href="/settings"
-                onClick={() => setDropdownOpen(false)}
-                className="block px-4 py-2 text-xs hover:bg-zinc-50 dark:hover:bg-zinc-900"
-              >
-                설정
-              </Link>
-              <hr className="my-1 border-zinc-100 dark:border-zinc-800" />
-              <button
-                type="button"
-                onClick={() => void handleLogout()}
-                className="w-full px-4 py-2 text-left text-xs text-red-500 hover:bg-zinc-50 dark:hover:bg-zinc-900"
-              >
-                로그아웃
-              </button>
+            <div className="absolute right-0 top-full z-50 mt-1 w-64 overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-xl dark:border-zinc-800 dark:bg-zinc-950">
+              {/* 프로필 상단 카드 */}
+              <div className="p-4">
+                <div className="flex items-center gap-3">
+                  {/* 아바타 (크게) */}
+                  <div className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-full bg-zinc-200 text-xl font-bold uppercase dark:bg-zinc-700">
+                    {avatarUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={avatarUrl} alt={displayName ?? ""} className="h-full w-full object-cover" />
+                    ) : (
+                      displayName?.charAt(0) ?? "?"
+                    )}
+                  </div>
+                  {/* 이름 + 제작자 페이지 이동 버튼 */}
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-semibold text-zinc-900 dark:text-zinc-50">
+                      {displayName}
+                    </p>
+                    {userId && (
+                      <Link
+                        href={`/creator/${userId}`}
+                        onClick={() => setDropdownOpen(false)}
+                        className="mt-1 inline-flex items-center gap-1 rounded-md bg-zinc-100 px-2 py-0.5 text-[11px] font-medium text-zinc-600 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-700"
+                      >
+                        제작자 페이지
+                        <svg className="h-2.5 w-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 4.5 21 12m0 0-7.5 7.5M21 12H3" />
+                        </svg>
+                      </Link>
+                    )}
+                  </div>
+                </div>
+
+                {/* 팔로워 / 팔로잉 */}
+                <div className="mt-3 flex gap-4 border-t border-zinc-100 pt-3 dark:border-zinc-800">
+                  <Link
+                    href={userId ? `/creator/${userId}` : "#"}
+                    onClick={() => setDropdownOpen(false)}
+                    className="group flex flex-col items-center gap-0.5"
+                  >
+                    <span className="text-base font-bold text-zinc-900 group-hover:text-zinc-600 dark:text-zinc-50 dark:group-hover:text-zinc-400">
+                      {followerCount.toLocaleString()}
+                    </span>
+                    <span className="text-[11px] text-zinc-500 group-hover:text-zinc-400 dark:text-zinc-500">팔로워</span>
+                  </Link>
+                  <div className="w-px bg-zinc-100 dark:bg-zinc-800" />
+                  <Link
+                    href="/mypage"
+                    onClick={() => setDropdownOpen(false)}
+                    className="group flex flex-col items-center gap-0.5"
+                  >
+                    <span className="text-base font-bold text-zinc-900 group-hover:text-zinc-600 dark:text-zinc-50 dark:group-hover:text-zinc-400">
+                      {followingCount.toLocaleString()}
+                    </span>
+                    <span className="text-[11px] text-zinc-500 group-hover:text-zinc-400 dark:text-zinc-500">팔로잉</span>
+                  </Link>
+                </div>
+              </div>
+
+              {/* 메뉴 항목들 */}
+              <div className="border-t border-zinc-100 py-1 dark:border-zinc-800">
+                <Link
+                  href="/mypage"
+                  onClick={() => setDropdownOpen(false)}
+                  className="flex items-center gap-2.5 px-4 py-2 text-xs text-zinc-700 hover:bg-zinc-50 dark:text-zinc-300 dark:hover:bg-zinc-900"
+                >
+                  <svg className="h-3.5 w-3.5 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 6a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0ZM4.501 20.118a7.5 7.5 0 0 1 14.998 0A17.933 17.933 0 0 1 12 21.75c-2.676 0-5.216-.584-7.499-1.632Z" />
+                  </svg>
+                  마이페이지
+                </Link>
+                <Link
+                  href="/dashboard"
+                  onClick={() => setDropdownOpen(false)}
+                  className="flex items-center gap-2.5 px-4 py-2 text-xs text-zinc-700 hover:bg-zinc-50 dark:text-zinc-300 dark:hover:bg-zinc-900"
+                >
+                  <svg className="h-3.5 w-3.5 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09Z" />
+                  </svg>
+                  제작 스튜디오
+                </Link>
+              </div>
+
+              {/* 로그아웃 */}
+              <div className="border-t border-zinc-100 py-1 dark:border-zinc-800">
+                <button
+                  type="button"
+                  onClick={() => void handleLogout()}
+                  className="flex w-full items-center gap-2.5 px-4 py-2 text-xs text-red-500 hover:bg-zinc-50 dark:hover:bg-zinc-900"
+                >
+                  <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0 0 13.5 3h-6a2.25 2.25 0 0 0-2.25 2.25v13.5A2.25 2.25 0 0 0 7.5 21h6a2.25 2.25 0 0 0 2.25-2.25V15M12 9l-3 3m0 0 3 3m-3-3h12.75" />
+                  </svg>
+                  로그아웃
+                </button>
+              </div>
             </div>
           )}
         </div>
