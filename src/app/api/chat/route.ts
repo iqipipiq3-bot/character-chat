@@ -96,13 +96,13 @@ type HistoryRow = {
 const ALLOWED_MODELS = ["gemini-2.5-pro", "gemini-3.1-pro-preview"] as const;
 
 const MODEL_COSTS: Record<string, number> = {
-  "gemini-2.5-pro": 60,
+  "gemini-2.5-pro": 65,
   "gemini-3.1-pro-preview": 90,
 };
 
 const MODEL_CONFIG: Record<(typeof ALLOWED_MODELS)[number], ModelConfig> = {
   "gemini-2.5-pro": {
-    maxOutputTokens: 3000,
+    maxOutputTokens: 2500,
     temperature: 1.3,
     topP: 0.95,
     topK: 40,
@@ -113,7 +113,7 @@ const MODEL_CONFIG: Record<(typeof ALLOWED_MODELS)[number], ModelConfig> = {
   },
   "gemini-3.1-pro-preview": {
     maxOutputTokens: 4000,
-    temperature: 1.7,
+    temperature: 1.3,
     topP: 0.95,
     topK: 40,
     presencePenalty: null,
