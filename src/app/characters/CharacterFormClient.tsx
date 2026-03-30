@@ -58,6 +58,7 @@ export type CharacterFormInitialData = {
   targetGender: string;
   ageRating: string;
   recommendedModel: string;
+  visibility: string;
 };
 
 type Props = {
@@ -173,6 +174,9 @@ export function CharacterFormClient({ mode, characterId, initialData }: Props) {
   const [ageRating, setAgeRating] = useState(initialData?.ageRating ?? "");
   const [recommendedModel, setRecommendedModel] = useState<ChatModelValue>(
     (initialData?.recommendedModel as ChatModelValue | undefined) ?? "gemini-2.5-pro"
+  );
+  const [visibility, setVisibility] = useState<"public" | "link" | "private">(
+    (initialData?.visibility as "public" | "link" | "private" | undefined) ?? "private"
   );
 
   // ── UI ──
@@ -430,6 +434,8 @@ export function CharacterFormClient({ mode, characterId, initialData }: Props) {
         target_gender: targetGender || null,
         age_rating: ageRating || null,
         recommended_model: recommendedModel,
+        visibility,
+        is_public: visibility === "public",
       };
 
       let charId = characterId;
@@ -1622,6 +1628,42 @@ export function CharacterFormClient({ mode, characterId, initialData }: Props) {
                     </button>
                   ))}
                 </div>
+              </div>
+
+              {/* 공개 설정 */}
+              <div>
+                <label className={LABEL}>
+                  공개 설정 <span className="text-red-500">*</span>
+                </label>
+                <div className="mt-2 flex gap-2">
+                  {([
+                    { value: "public", label: "공개" },
+                    { value: "link", label: "링크공개" },
+                    { value: "private", label: "비공개" },
+                  ] as const).map((opt) => (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => setVisibility(opt.value)}
+                      className={`flex-1 rounded-lg border py-2 text-sm font-medium transition-colors ${
+                        visibility === opt.value
+                          ? opt.value === "public"
+                            ? "border-emerald-600 bg-emerald-600 text-white"
+                            : opt.value === "link"
+                              ? "border-blue-600 bg-blue-600 text-white"
+                              : "border-zinc-600 bg-zinc-600 text-white"
+                          : "border-zinc-200 bg-white text-zinc-600 hover:border-zinc-400 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-400 dark:hover:border-zinc-500"
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+                <p className="mt-2 text-xs text-zinc-500 dark:text-zinc-400">
+                  {visibility === "public" && "둘러보기에 노출되며 누구나 접근 가능합니다."}
+                  {visibility === "link" && "링크를 가진 사용자만 접근 가능합니다."}
+                  {visibility === "private" && "제작자 본인만 접근 가능합니다."}
+                </p>
               </div>
             </div>
           )}

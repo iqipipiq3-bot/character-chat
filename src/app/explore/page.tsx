@@ -52,7 +52,7 @@ export default async function ExplorePage({
   const { data } = await supabase
     .from("characters")
     .select("id, name, description, thumbnail_url, model, user_id, usage_count, tags")
-    .eq("is_public", true)
+    .eq("visibility", "public")
     .order("created_at", { ascending: false });
 
   const list = (data ?? []) as Omit<PublicCharacter, "author_nickname">[];

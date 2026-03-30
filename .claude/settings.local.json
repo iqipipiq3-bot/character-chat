@@ -15,7 +15,12 @@
       "Bash(find C:UsersUserDesktopcharacter-chat -type f \\\\\\(-name *.sql -o -name *schema* -o -name *database* \\\\\\))",
       "Bash(grep -n \"fontSize\\\\|font-size\\\\|fontSettings\\\\|MarkdownRenderer\\\\|role.*user\\\\|role.*assistant\\\\|role.*model\\\\|bubble\\\\|narrat\" /c/Users/User/Desktop/character-chat/src/app/chat/[conversationId]/page.tsx)",
       "Bash(grep -n \"userNote\\\\|user_note\\\\|localStorage\" /c/Users/User/Desktop/character-chat/src/app/chat/[conversationId]/page.tsx)",
-      "Bash(grep -n \"conversationId\\\\|useParams\\\\|params\" /c/Users/User/Desktop/character-chat/src/app/chat/[conversationId]/page.tsx)"
+      "Bash(grep -n \"conversationId\\\\|useParams\\\\|params\" /c/Users/User/Desktop/character-chat/src/app/chat/[conversationId]/page.tsx)",
+      "Bash(grep -r \"toast\\\\|notification\\\\|Toaster\" C:UsersUserDesktopcharacter-chat/src --include=*.tsx --include=*.ts -l)",
+      "Bash(grep -r \"alert\\\\|dialog\\\\|useState.*visible\\\\|useState.*show\" C:UsersUserDesktopcharacter-chat/src/app --include=*.tsx -l)",
+      "Bash(find /c/Users/User/Desktop/character-chat -type f -path */api/* \\\\\\(-name *.ts -o -name *.tsx \\\\\\))",
+      "Bash(find /c/Users/User/Desktop/character-chat -type f -name *.sql)",
+      "Bash(grep -r is_public /c/Users/User/Desktop/character-chat/src --include=*.tsx --include=*.ts)"
     ]
   }
 }

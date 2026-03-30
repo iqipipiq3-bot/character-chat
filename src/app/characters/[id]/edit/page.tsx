@@ -37,7 +37,7 @@ export default function EditCharacterPage() {
         // 추가 컬럼들 (없으면 기본값 사용)
         const { data: charExtra } = await supabase
           .from("characters")
-          .select("creator_comment, target_gender, age_rating, recommended_model")
+          .select("creator_comment, target_gender, age_rating, recommended_model, visibility")
           .eq("id", id)
           .maybeSingle();
 
@@ -85,6 +85,7 @@ export default function EditCharacterPage() {
           targetGender: (charExtra?.target_gender as string | null) ?? "",
           ageRating: (charExtra?.age_rating as string | null) ?? "",
           recommendedModel: (charExtra?.recommended_model as string | null) ?? "gemini-2.5-pro",
+          visibility: (charExtra?.visibility as string | null) ?? "private",
         });
       } catch (e) {
         setError(e instanceof Error ? e.message : "불러오는 중 오류가 발생했습니다.");

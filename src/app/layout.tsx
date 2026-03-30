@@ -5,6 +5,8 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { ConversationSidebar } from "./ConversationSidebar";
 import { HeaderShell, HeaderPadding } from "./HeaderShell";
+import { ToastContainer } from "./components/Toast";
+import { HeaderProvider } from "./context/HeaderContext";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -87,24 +89,58 @@ export default async function RootLayout({
     followingCount = fwingCount ?? 0;
   }
 
+  // 크레딧 잔액 + 오늘 출석 여부
+  let freeBalance = 0;
+  let paidBalance = 0;
+  let checkedInToday = false;
+
+  if (user) {
+    const kstToday = new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().split("T")[0]!;
+
+    const [{ data: creditsData }, { data: checkinData }] = await Promise.all([
+      supabase
+        .from("user_credits")
+        .select("free_balance, paid_balance")
+        .eq("user_id", user.id)
+        .maybeSingle(),
+      supabase
+        .from("daily_checkins")
+        .select("id")
+        .eq("user_id", user.id)
+        .eq("checked_date", kstToday)
+        .maybeSingle(),
+    ]);
+
+    freeBalance = creditsData?.free_balance ?? 0;
+    paidBalance = creditsData?.paid_balance ?? 0;
+    checkedInToday = !!checkinData;
+  }
+
   return (
     <html lang="ko">
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
-        {/* 상단 고정 헤더 (로그인/회원가입 페이지에서는 숨김) */}
-        <HeaderShell
-          displayName={displayName}
-          isLoggedIn={!!user}
-          avatarUrl={avatarUrl}
-          userId={userId}
-          followerCount={followerCount}
-          followingCount={followingCount}
-        />
-        {/* 고정 사이드바 — /explore, /dashboard에서만 표시 */}
-        <ConversationSidebar />
-        {/* 헤더 높이만큼 오프셋 (로그인/회원가입 페이지에서는 패딩 없음) */}
-        <HeaderPadding>
-          {children}
-        </HeaderPadding>
+        <HeaderProvider
+          initialFreeBalance={freeBalance}
+          initialPaidBalance={paidBalance}
+          initialCheckedIn={checkedInToday}
+        >
+          {/* 상단 고정 헤더 (로그인/회원가입 페이지에서는 숨김) */}
+          <HeaderShell
+            displayName={displayName}
+            isLoggedIn={!!user}
+            avatarUrl={avatarUrl}
+            userId={userId}
+            followerCount={followerCount}
+            followingCount={followingCount}
+          />
+          <ToastContainer />
+          {/* 고정 사이드바 — /explore, /dashboard에서만 표시 */}
+          <ConversationSidebar />
+          {/* 헤더 높이만큼 오프셋 (로그인/회원가입 페이지에서는 패딩 없음) */}
+          <HeaderPadding>
+            {children}
+          </HeaderPadding>
+        </HeaderProvider>
       </body>
     </html>
   );

@@ -83,13 +83,15 @@ export default function SignupPage() {
       const { data, error: signUpError } = await supabase.auth.signUp({ email, password });
       if (signUpError) throw signUpError;
 
-      // ② 닉네임 저장
+      // ② 닉네임 저장 + 가입 보너스 지급
       const userId = data.user?.id;
       if (userId) {
         await supabase.from("profiles").upsert(
           { user_id: userId, nickname: trimmedNickname },
           { onConflict: "user_id" }
         );
+        // 세션 쿠키가 설정된 뒤 서버 API로 보너스 지급
+        fetch("/api/signup-bonus", { method: "POST" }).catch(() => {});
       }
 
       router.replace("/dashboard");

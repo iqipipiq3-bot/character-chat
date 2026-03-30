@@ -16,6 +16,7 @@ type Character = {
   model: string | null;
   created_at: string;
   is_public: boolean | null;
+  visibility: string | null;
   thumbnail_url: string | null;
   description: string | null;
 };
@@ -49,7 +50,7 @@ export default async function DashboardPage() {
 
   const { data: characters } = await supabase
     .from("characters")
-    .select("id, name, model, created_at, is_public, thumbnail_url, description")
+    .select("id, name, model, created_at, is_public, visibility, thumbnail_url, description")
     .eq("user_id", user.id)
     .order("created_at", { ascending: false });
 

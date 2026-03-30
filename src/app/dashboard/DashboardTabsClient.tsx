@@ -11,6 +11,7 @@ type Character = {
   model: string | null;
   created_at: string;
   is_public: boolean | null;
+  visibility: string | null;
   thumbnail_url: string | null;
   description: string | null;
 };

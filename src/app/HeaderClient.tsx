@@ -3,20 +3,8 @@
 import { useState, useRef, useEffect } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
-
-const CHAT_MODELS = [
-  { value: "gemini-2.5-pro", label: "Gemini 2.5 Pro", heartColor: "#FF0000" },
-  { value: "gemini-3.1-pro-preview", label: "Gemini 3.1 Pro", heartColor: "#FF6B00" },
-] as const;
-
-function HeaderHeartIcon({ color }: { color: string }) {
-  return (
-    <svg width="12" height="12" viewBox="0 0 24 24" fill={color} xmlns="http://www.w3.org/2000/svg">
-      <path d="M12 21.593c-.525-.507-5.453-5.017-7.005-6.938C2.464 11.977 2 10.025 2 8.196 2 4.771 4.812 2 8.286 2c1.773 0 3.416.808 4.714 2.136C14.298 2.808 15.941 2 17.714 2 21.188 2 24 4.771 24 8.196c0 1.83-.464 3.78-2.995 6.459-1.552 1.921-6.48 6.431-7.005 6.938l-1 .948-1-.948z" />
-    </svg>
-  );
-}
 import { createSupabaseBrowserClient } from "./lib/supabase";
+import { useHeaderStore } from "./context/HeaderContext";
 
 type Props = {
   displayName: string | null;
@@ -30,21 +18,11 @@ type Props = {
 export function HeaderClient({ displayName, isLoggedIn, avatarUrl, userId, followerCount, followingCount }: Props) {
   const router = useRouter();
   const pathname = usePathname();
-  const isChatPage = pathname?.startsWith("/chat/") ?? false;
-
   const [searchQuery, setSearchQuery] = useState("");
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
-  const [modelMenuOpen, setModelMenuOpen] = useState(false);
-  const modelMenuRef = useRef<HTMLDivElement>(null);
 
-  const [chatModel, setChatModel] = useState("gemini-2.5-pro");
-
-  useEffect(() => {
-    if (isChatPage) {
-      setChatModel(localStorage.getItem("chat_model") ?? "gemini-2.5-pro");
-    }
-  }, [isChatPage]);
+  const { checkedInToday: localCheckedIn, freeBalance: localFreeBalance, paidBalance: localPaidBalance } = useHeaderStore();
 
   useEffect(() => {
     const supabase = createSupabaseBrowserClient();
@@ -53,19 +31,10 @@ export function HeaderClient({ displayName, isLoggedIn, avatarUrl, userId, follo
     });
   }, []);
 
-  function handleModelChange(value: string) {
-    setChatModel(value);
-    localStorage.setItem("chat_model", value);
-    window.dispatchEvent(new CustomEvent("chatModelChange", { detail: { model: value } }));
-  }
-
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
       if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
         setDropdownOpen(false);
-      }
-      if (modelMenuRef.current && !modelMenuRef.current.contains(e.target as Node)) {
-        setModelMenuOpen(false);
       }
     }
     document.addEventListener("mousedown", handleClickOutside);
@@ -139,36 +108,20 @@ export function HeaderClient({ displayName, isLoggedIn, avatarUrl, userId, follo
         </div>
       </form>
 
-      {/* 모델 선택 (채팅 페이지에서만 표시) */}
-      {isChatPage && (
-        <div className="relative shrink-0" ref={modelMenuRef}>
-          <button
-            type="button"
-            onClick={() => setModelMenuOpen((v) => !v)}
-            className="flex h-8 items-center gap-1.5 rounded-lg border border-zinc-200 bg-zinc-50 pl-2.5 pr-2 text-xs font-medium text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300"
-          >
-            <HeaderHeartIcon color={CHAT_MODELS.find((m) => m.value === chatModel)?.heartColor ?? "#FF0000"} />
-            <span>{CHAT_MODELS.find((m) => m.value === chatModel)?.label ?? "모델 선택"}</span>
-            <svg className="h-3 w-3 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-            </svg>
-          </button>
-          {modelMenuOpen && (
-            <div className="absolute right-0 top-full z-50 mt-1 w-44 overflow-hidden rounded-xl border border-zinc-200 bg-white py-1 shadow-lg dark:border-zinc-800 dark:bg-zinc-950">
-              {CHAT_MODELS.map((m) => (
-                <button
-                  key={m.value}
-                  type="button"
-                  onClick={() => { handleModelChange(m.value); setModelMenuOpen(false); }}
-                  className={`flex w-full items-center gap-2 px-3 py-2 text-xs hover:bg-zinc-50 dark:hover:bg-zinc-900 ${chatModel === m.value ? "font-semibold text-zinc-900 dark:text-zinc-100" : "text-zinc-600 dark:text-zinc-400"}`}
-                >
-                  <HeaderHeartIcon color={m.heartColor} />
-                  {m.label}
-                </button>
-              ))}
-            </div>
+      {/* 출석 아이콘 (로그인 시만) */}
+      {isLoggedIn && (
+        <Link
+          href="/attendance"
+          className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-900"
+          aria-label="출석"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="h-[18px] w-[18px]">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 0 1 2.25-2.25h13.5A2.25 2.25 0 0 1 21 7.5v11.25m-18 0A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75m-18 0v-7.5A2.25 2.25 0 0 1 5.25 9h13.5A2.25 2.25 0 0 1 21 11.25v7.5" />
+          </svg>
+          {!localCheckedIn && (
+            <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-red-500" />
           )}
-        </div>
+        </Link>
       )}
 
       {/* 알림 버튼 */}
@@ -257,29 +210,60 @@ export function HeaderClient({ displayName, isLoggedIn, avatarUrl, userId, follo
                   </div>
                 </div>
 
-                {/* 팔로워 / 팔로잉 */}
-                <div className="mt-3 flex gap-4 border-t border-zinc-100 pt-3 dark:border-zinc-800">
+                {/* 팔로워 / 팔로잉 / 큐브 잔액 — 4등분 */}
+                <div className="mt-3 grid grid-cols-4 divide-x divide-zinc-100 border-t border-zinc-100 pt-3 dark:divide-zinc-800 dark:border-zinc-800">
                   <Link
                     href={userId ? `/creator/${userId}` : "#"}
                     onClick={() => setDropdownOpen(false)}
-                    className="group flex flex-col items-center gap-0.5"
+                    className="group flex flex-col items-center gap-0.5 px-1"
                   >
-                    <span className="text-base font-bold text-zinc-900 group-hover:text-zinc-600 dark:text-zinc-50 dark:group-hover:text-zinc-400">
+                    <span className="text-sm font-bold text-zinc-900 group-hover:text-zinc-600 dark:text-zinc-50 dark:group-hover:text-zinc-400">
                       {followerCount.toLocaleString()}
                     </span>
-                    <span className="text-[11px] text-zinc-500 group-hover:text-zinc-400 dark:text-zinc-500">팔로워</span>
+                    <span className="text-[10px] text-zinc-500 group-hover:text-zinc-400 dark:text-zinc-500">팔로워</span>
                   </Link>
-                  <div className="w-px bg-zinc-100 dark:bg-zinc-800" />
                   <Link
                     href="/mypage"
                     onClick={() => setDropdownOpen(false)}
-                    className="group flex flex-col items-center gap-0.5"
+                    className="group flex flex-col items-center gap-0.5 px-1"
                   >
-                    <span className="text-base font-bold text-zinc-900 group-hover:text-zinc-600 dark:text-zinc-50 dark:group-hover:text-zinc-400">
+                    <span className="text-sm font-bold text-zinc-900 group-hover:text-zinc-600 dark:text-zinc-50 dark:group-hover:text-zinc-400">
                       {followingCount.toLocaleString()}
                     </span>
-                    <span className="text-[11px] text-zinc-500 group-hover:text-zinc-400 dark:text-zinc-500">팔로잉</span>
+                    <span className="text-[10px] text-zinc-500 group-hover:text-zinc-400 dark:text-zinc-500">팔로잉</span>
                   </Link>
+                  {/* 무료 큐브 */}
+                  <div className="flex flex-col items-center gap-0.5 px-1">
+                    <div className="flex items-center gap-1">
+                      <svg viewBox="0 0 24 24" fill="currentColor" className="h-3 w-3 text-zinc-400">
+                        <path d="M21 16.5c0 .38-.21.71-.53.88l-7.9 4.44c-.16.12-.36.18-.57.18-.21 0-.41-.06-.57-.18l-7.9-4.44A.99.99 0 013 16.5v-9c0-.38.21-.71.53-.88l7.9-4.44C11.59 2.06 11.79 2 12 2c.21 0 .41.06.57.18l7.9 4.44c.32.17.53.5.53.88v9zM12 4.15L6.04 7.5 12 10.85l5.96-3.35L12 4.15zM5 15.91l6 3.38v-6.71L5 9.21v6.7zm8 3.38l6-3.38V9.21l-6 3.37v6.71z" />
+                      </svg>
+                      <span className="text-sm font-bold text-zinc-900 dark:text-zinc-50">
+                        {localFreeBalance.toLocaleString()}
+                      </span>
+                    </div>
+                    <span className="text-[10px] text-zinc-500 dark:text-zinc-500">무료</span>
+                  </div>
+                  {/* 프리즘 큐브 */}
+                  <div className="flex flex-col items-center gap-0.5 px-1">
+                    <div className="flex items-center gap-1">
+                      <svg viewBox="0 0 24 24" className="h-3 w-3 shrink-0">
+                        <defs>
+                          <linearGradient id="prism-grad-dropdown" x1="0%" y1="0%" x2="100%" y2="100%">
+                            <stop offset="0%" stopColor="#a78bfa" />
+                            <stop offset="33%" stopColor="#60a5fa" />
+                            <stop offset="66%" stopColor="#34d399" />
+                            <stop offset="100%" stopColor="#f472b6" />
+                          </linearGradient>
+                        </defs>
+                        <path fill="url(#prism-grad-dropdown)" d="M21 16.5c0 .38-.21.71-.53.88l-7.9 4.44c-.16.12-.36.18-.57.18-.21 0-.41-.06-.57-.18l-7.9-4.44A.99.99 0 013 16.5v-9c0-.38.21-.71.53-.88l7.9-4.44C11.59 2.06 11.79 2 12 2c.21 0 .41.06.57.18l7.9 4.44c.32.17.53.5.53.88v9zM12 4.15L6.04 7.5 12 10.85l5.96-3.35L12 4.15zM5 15.91l6 3.38v-6.71L5 9.21v6.7zm8 3.38l6-3.38V9.21l-6 3.37v6.71z" />
+                      </svg>
+                      <span className="text-sm font-bold text-zinc-900 dark:text-zinc-50">
+                        {localPaidBalance.toLocaleString()}
+                      </span>
+                    </div>
+                    <span className="text-[10px] text-zinc-500 dark:text-zinc-500">프리즘</span>
+                  </div>
                 </div>
               </div>
 

@@ -10,11 +10,13 @@ function getSupabaseEnv() {
   return { url, anonKey };
 }
 
-export type FollowedCreator = {
-  user_id: string;
-  nickname: string;
-  avatar_url: string | null;
-  character_count: number;
+export type CreditTransaction = {
+  id: string;
+  amount: number;
+  credit_type: string;
+  transaction_type: string;
+  description: string | null;
+  created_at: string;
 };
 
 export default async function MypagePage() {
@@ -41,46 +43,32 @@ export default async function MypagePage() {
     .eq("user_id", user.id)
     .maybeSingle();
 
-  // 팔로우한 제작자 목록
-  const { data: followsData } = await supabase
-    .from("follows")
-    .select("following_id")
-    .eq("follower_id", user.id);
+  // 크레딧 잔액 + 최근 거래내역
+  const [{ data: creditsData }, { data: txData }] = await Promise.all([
+    supabase
+      .from("user_credits")
+      .select("free_balance, paid_balance")
+      .eq("user_id", user.id)
+      .maybeSingle(),
+    supabase
+      .from("credit_transactions")
+      .select("id, amount, credit_type, transaction_type, description, created_at")
+      .eq("user_id", user.id)
+      .order("created_at", { ascending: false })
+      .limit(10),
+  ]);
 
-  const followingIds = (followsData ?? []).map((f) => f.following_id as string);
-
-  let followedCreators: FollowedCreator[] = [];
-  if (followingIds.length > 0) {
-    const { data: profilesData } = await supabase
-      .from("profiles")
-      .select("user_id, nickname, avatar_url")
-      .in("user_id", followingIds);
-
-    const { data: charsData } = await supabase
-      .from("characters")
-      .select("user_id")
-      .in("user_id", followingIds)
-      .eq("is_public", true);
-
-    const charCountMap: Record<string, number> = {};
-    for (const c of charsData ?? []) {
-      const uid = c.user_id as string;
-      charCountMap[uid] = (charCountMap[uid] ?? 0) + 1;
-    }
-
-    followedCreators = (profilesData ?? []).map((p) => ({
-      user_id: p.user_id as string,
-      nickname: (p.nickname as string | null) ?? "익명",
-      avatar_url: (p.avatar_url as string | null) ?? null,
-      character_count: charCountMap[p.user_id as string] ?? 0,
-    }));
-  }
+  const freeBalance = (creditsData?.free_balance as number | null) ?? 0;
+  const paidBalance = (creditsData?.paid_balance as number | null) ?? 0;
+  const transactions: CreditTransaction[] = (txData ?? []) as CreditTransaction[];
 
   return (
     <MypageClient
       email={user.email ?? ""}
       initialNickname={(profile?.nickname as string | null) ?? ""}
-      followedCreators={followedCreators}
+      freeBalance={freeBalance}
+      paidBalance={paidBalance}
+      transactions={transactions}
     />
   );
 }

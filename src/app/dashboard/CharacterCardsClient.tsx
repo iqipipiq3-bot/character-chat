@@ -5,12 +5,15 @@ import { useRouter } from "next/navigation";
 import { createSupabaseBrowserClient } from "../lib/supabase";
 import { getCardGradient } from "../lib/gradient";
 
+type Visibility = "public" | "link" | "private";
+
 type Character = {
   id: string;
   name: string;
   model: string | null;
   created_at: string;
   is_public: boolean | null;
+  visibility: string | null;
   thumbnail_url: string | null;
   description: string | null;
 };
@@ -34,24 +37,34 @@ export function CharacterCardsClient({ initial }: Props) {
     return () => document.removeEventListener("click", handle);
   }, [openMenuId]);
 
-  async function handleTogglePublic(character: Character) {
+  async function handleChangeVisibility(character: Character, newVisibility: Visibility) {
     setBusyId(character.id);
     try {
       const supabase = createSupabaseBrowserClient();
-      const target = !character.is_public;
       const { error } = await supabase
         .from("characters")
-        .update({ is_public: target })
+        .update({ visibility: newVisibility, is_public: newVisibility === "public" })
         .eq("id", character.id);
       if (error) throw new Error(error.message);
       setCharacters((prev) =>
-        prev.map((c) => (c.id === character.id ? { ...c, is_public: target } : c))
+        prev.map((c) =>
+          c.id === character.id
+            ? { ...c, visibility: newVisibility, is_public: newVisibility === "public" }
+            : c
+        )
       );
     } catch (err) {
       window.alert(err instanceof Error ? err.message : "공개 설정 변경 중 오류가 발생했습니다.");
     } finally {
       setBusyId(null);
     }
+  }
+
+  function getVisibility(character: Character): Visibility {
+    if (character.visibility === "public" || character.visibility === "link" || character.visibility === "private") {
+      return character.visibility;
+    }
+    return character.is_public ? "public" : "private";
   }
 
   async function handleDelete(character: Character) {
@@ -175,16 +188,21 @@ export function CharacterCardsClient({ initial }: Props) {
                   </span>
                 </div>
               )}
-              {/* 공개/비공개 뱃지 */}
-              {character.is_public ? (
-                <span className="absolute left-2 top-2 rounded-full bg-emerald-500/90 px-2 py-0.5 text-[10px] font-medium text-white backdrop-blur-sm">
-                  공개
-                </span>
-              ) : (
-                <span className="absolute left-2 top-2 rounded-full bg-zinc-600/80 px-2 py-0.5 text-[10px] font-medium text-white backdrop-blur-sm">
-                  비공개
-                </span>
-              )}
+              {/* 공개 상태 뱃지 */}
+              {(() => {
+                const v = getVisibility(character);
+                return (
+                  <span className={`absolute left-2 top-2 rounded-full px-2 py-0.5 text-[10px] font-medium text-white backdrop-blur-sm ${
+                    v === "public"
+                      ? "bg-emerald-500/90"
+                      : v === "link"
+                        ? "bg-blue-500/90"
+                        : "bg-zinc-600/80"
+                  }`}>
+                    {v === "public" ? "공개" : v === "link" ? "링크공개" : "비공개"}
+                  </span>
+                );
+              })()}
             </div>
             {/* 하단 정보 영역 — pb-8 으로 ··· 버튼 공간 확보 */}
             <div className="px-3 pb-8 pt-2">
@@ -222,14 +240,26 @@ export function CharacterCardsClient({ initial }: Props) {
                 >
                   링크 복사
                 </button>
-                <button
-                  type="button"
-                  disabled={busyId === character.id}
-                  onClick={() => { setOpenMenuId(null); void handleTogglePublic(character); }}
-                  className="flex w-full items-center px-3 py-2 text-xs hover:bg-zinc-50 disabled:opacity-60 dark:hover:bg-zinc-800"
-                >
-                  {character.is_public ? "비공개로 전환" : "공개로 전환"}
-                </button>
+                {(() => {
+                  const v = getVisibility(character);
+                  const opts: { label: string; value: Visibility }[] =
+                    v === "public"
+                      ? [{ label: "링크공개로 전환", value: "link" }, { label: "비공개로 전환", value: "private" }]
+                      : v === "link"
+                        ? [{ label: "공개로 전환", value: "public" }, { label: "비공개로 전환", value: "private" }]
+                        : [{ label: "공개로 전환", value: "public" }, { label: "링크공개로 전환", value: "link" }];
+                  return opts.map((opt) => (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      disabled={busyId === character.id}
+                      onClick={() => { setOpenMenuId(null); void handleChangeVisibility(character, opt.value); }}
+                      className="flex w-full items-center px-3 py-2 text-xs hover:bg-zinc-50 disabled:opacity-60 dark:hover:bg-zinc-800"
+                    >
+                      {opt.label}
+                    </button>
+                  ));
+                })()}
                 <button
                   type="button"
                   onClick={() => { setOpenMenuId(null); router.push(`/characters/${character.id}/edit`); }}

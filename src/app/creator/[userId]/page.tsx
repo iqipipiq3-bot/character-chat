@@ -64,7 +64,7 @@ export default async function CreatorProfilePage({
     .from("characters")
     .select("id, name, description, thumbnail_url, usage_count, tags")
     .eq("user_id", userId)
-    .eq("is_public", true)
+    .eq("visibility", "public")
     .order("created_at", { ascending: false });
 
   // 팔로워/팔로잉 수

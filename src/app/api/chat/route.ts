@@ -69,6 +69,7 @@ type CharacterRow = {
   model: string | null;
   user_id: string;
   is_public: boolean | null;
+  visibility: string | null;
 };
 
 type LorebookRow = {
@@ -93,6 +94,11 @@ type HistoryRow = {
 };
 
 const ALLOWED_MODELS = ["gemini-2.5-pro", "gemini-3.1-pro-preview"] as const;
+
+const MODEL_COSTS: Record<string, number> = {
+  "gemini-2.5-pro": 60,
+  "gemini-3.1-pro-preview": 90,
+};
 
 const MODEL_CONFIG: Record<(typeof ALLOWED_MODELS)[number], ModelConfig> = {
   "gemini-2.5-pro": {
@@ -322,7 +328,7 @@ export async function POST(request: NextRequest) {
     ] = await Promise.all([
       supabase
         .from("characters")
-        .select("id, name, prompt, model, user_id, is_public")
+        .select("id, name, prompt, model, user_id, is_public, visibility")
         .eq("id", characterId)
         .maybeSingle<CharacterRow>(),
       supabase
@@ -366,7 +372,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: characterError.message }, { status: 400 });
     }
 
-    if (!character || (character.user_id !== user.id && !character.is_public)) {
+    if (!character) {
+      return NextResponse.json({ error: "Character not found." }, { status: 404 });
+    }
+    const charVisibility = character.visibility ?? (character.is_public ? "public" : "private");
+    if (charVisibility === "private" && character.user_id !== user.id) {
       return NextResponse.json({ error: "Character not found." }, { status: 404 });
     }
 
@@ -453,6 +463,24 @@ export async function POST(request: NextRequest) {
           : "gemini-2.5-pro");
 
     const modelCfg = MODEL_CONFIG[modelId];
+    const creditCost = MODEL_COSTS[modelId] ?? 60;
+
+    // ── 크레딧 잔액 확인 ───────────────────────────────────────────────────
+    const { data: creditsData } = await supabase
+      .from("user_credits")
+      .select("free_balance, paid_balance")
+      .eq("user_id", user.id)
+      .maybeSingle();
+
+    const freeBalance = creditsData?.free_balance ?? 0;
+    const paidBalance = creditsData?.paid_balance ?? 0;
+
+    if (freeBalance + paidBalance < creditCost) {
+      return NextResponse.json(
+        { error: "큐브가 부족합니다. 큐브를 충전해주세요." },
+        { status: 402 }
+      );
+    }
 
     const baseSystemPrompt = buildSystemPrompt({
       characterName: character.name,
@@ -683,30 +711,63 @@ export async function POST(request: NextRequest) {
           const now = new Date();
           const assistantTime = new Date(now.getTime() + 1);
 
-          const { error: insertError } = await supabase.from("messages").insert([
-            {
+          const { data: insertedMessages, error: insertError } = await supabase
+            .from("messages")
+            .insert([
+              {
+                user_id: user.id,
+                character_id: characterId,
+                conversation_id: conversationId,
+                role: "user",
+                content: message,
+                created_at: now.toISOString(),
+              },
+              {
+                user_id: user.id,
+                character_id: characterId,
+                conversation_id: conversationId,
+                role: "assistant",
+                content: finalReply,
+                model: modelId,
+                prompt_tokens: promptTokens,
+                completion_tokens: completionTokens,
+                thinking_tokens: thinkingTokens,
+                total_tokens: totalTokens,
+                cached_tokens: cachedPromptTokens ?? 0,
+                estimated_cost_usd: estimatedCost,
+                created_at: assistantTime.toISOString(),
+              },
+            ])
+            .select("id");
+
+          // ── 크레딧 차감 (Gemini 응답 성공 후) ───────────────────────────
+          const freeUsed = Math.min(freeBalance, creditCost);
+          const paidUsed = creditCost - freeUsed;
+          const creditType =
+            freeUsed > 0 && paidUsed > 0 ? "mixed" : freeUsed > 0 ? "free" : "paid";
+          const newFreeBalance = freeBalance - freeUsed;
+          const newPaidBalance = paidBalance - paidUsed;
+          const assistantMessageId =
+            (insertedMessages as Array<{ id: string }> | null)?.[1]?.id ?? null;
+
+          await Promise.all([
+            supabase.from("user_credits").upsert(
+              {
+                user_id: user.id,
+                free_balance: newFreeBalance,
+                paid_balance: newPaidBalance,
+                updated_at: new Date().toISOString(),
+              },
+              { onConflict: "user_id" }
+            ),
+            supabase.from("credit_transactions").insert({
               user_id: user.id,
-              character_id: characterId,
-              conversation_id: conversationId,
-              role: "user",
-              content: message,
-              created_at: now.toISOString(),
-            },
-            {
-              user_id: user.id,
-              character_id: characterId,
-              conversation_id: conversationId,
-              role: "assistant",
-              content: finalReply,
-              model: modelId,
-              prompt_tokens: promptTokens,
-              completion_tokens: completionTokens,
-              thinking_tokens: thinkingTokens,
-              total_tokens: totalTokens,
-              cached_tokens: cachedPromptTokens ?? 0,
-              estimated_cost_usd: estimatedCost,
-              created_at: assistantTime.toISOString(),
-            },
+              amount: -creditCost,
+              credit_type: creditType,
+              transaction_type: "chat_deduct",
+              description: `채팅 (${modelId})`,
+              reference_id: assistantMessageId,
+            }),
           ]);
 
           if (insertError) {
@@ -716,7 +777,14 @@ export async function POST(request: NextRequest) {
             );
           } else {
             controller.enqueue(
-              encoder.encode(`data: ${JSON.stringify({ done: true, model: modelId })}\n\n`)
+              encoder.encode(
+                `data: ${JSON.stringify({
+                  done: true,
+                  model: modelId,
+                  freeBalance: newFreeBalance,
+                  paidBalance: newPaidBalance,
+                })}\n\n`
+              )
             );
           }
 

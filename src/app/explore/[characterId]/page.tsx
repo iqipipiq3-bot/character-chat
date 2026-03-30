@@ -60,10 +60,10 @@ export default async function CharacterDetailPage({
     },
   });
 
-  // 캐릭터 조회 (로그인 유저는 비공개도 id로 접근 가능, RLS로 제어)
+  // 캐릭터 조회
   const { data: character } = await supabase
     .from("characters")
-    .select("id, name, description, introduction, thumbnail_url, user_id, usage_count, tags, creator_comment, recommended_model")
+    .select("id, name, description, introduction, thumbnail_url, user_id, usage_count, tags, creator_comment, recommended_model, visibility")
     .eq("id", characterId)
     .maybeSingle();
 
@@ -71,6 +71,20 @@ export default async function CharacterDetailPage({
 
   // 현재 사용자
   const { data: { user } } = await supabase.auth.getUser();
+
+  // visibility 접근 제어
+  const visibility = (character.visibility as string | null) ?? "public";
+  if (visibility === "private" && user?.id !== character.user_id) {
+    return (
+      <div className="flex min-h-[calc(100vh-3rem)] items-center justify-center bg-zinc-50 dark:bg-black">
+        <div className="text-center">
+          <p className="text-4xl mb-3">🔒</p>
+          <p className="text-base font-semibold text-zinc-700 dark:text-zinc-300">비공개 캐릭터입니다.</p>
+          <p className="mt-1 text-sm text-zinc-500">제작자만 접근할 수 있습니다.</p>
+        </div>
+      </div>
+    );
+  }
 
   // {{user}} 치환용 유저 이름
   let userName = "유저";

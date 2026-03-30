@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { createSupabaseBrowserClient } from "../../lib/supabase";
+import { useHeaderStore } from "../../context/HeaderContext";
 import type { Components } from "react-markdown";
 import React from "react";
 import { MarkdownRenderer } from "../../components/MarkdownRenderer";
@@ -45,6 +46,11 @@ function TypingIndicator() {
 
 const ALLOWED_MODELS = ["gemini-2.5-pro", "gemini-3.1-pro-preview"] as const;
 type ModelId = (typeof ALLOWED_MODELS)[number];
+
+const CHAT_MODELS: { value: ModelId; label: string; heartColor: string }[] = [
+  { value: "gemini-2.5-pro", label: "Gemini 2.5 Pro", heartColor: "#FF0000" },
+  { value: "gemini-3.1-pro-preview", label: "Gemini 3.1 Pro", heartColor: "#FF6B00" },
+];
 const LEGACY_DEFAULT_AI_BUBBLE_BG = "#FFFFFF";
 
 function extractText(node: React.ReactNode): string {
@@ -202,6 +208,9 @@ export default function ChatPage() {
 
   // 모델 선택
   const [selectedModel, setSelectedModel] = useState<ModelId>("gemini-2.5-pro");
+  const [modelMenuOpen, setModelMenuOpen] = useState(false);
+  const modelMenuRef = useRef<HTMLDivElement>(null);
+  const conversationModelRef = useRef<string | null>(null);
 
   // 페르소나
   const [personas, setPersonas] = useState<Persona[]>([]);
@@ -213,29 +222,8 @@ export default function ChatPage() {
   // 글꼴 설정
   const [fontSettings, setFontSettings] = useState<FontSettings>(DEFAULT_FONT_SETTINGS);
 
-  // localStorage 초기화 + 헤더 모델 변경 이벤트 수신
+  // localStorage 초기화 (페르소나·노트·폰트)
   useEffect(() => {
-    const modelFromQuery = searchParams.get("model");
-    console.log("[chat] searchParams model:", modelFromQuery);
-    console.log("[chat] ALLOWED_MODELS 포함 여부:", modelFromQuery ? ALLOWED_MODELS.includes(modelFromQuery as ModelId) : false);
-    if (modelFromQuery && ALLOWED_MODELS.includes(modelFromQuery as ModelId)) {
-      console.log("[chat] 추천 모델 적용:", modelFromQuery);
-      setSelectedModel(modelFromQuery as ModelId);
-      localStorage.setItem("chat_model", modelFromQuery);
-    } else {
-      const savedModel = localStorage.getItem("chat_model");
-      console.log("[chat] localStorage 모델:", savedModel);
-      if (savedModel && ALLOWED_MODELS.includes(savedModel as ModelId)) {
-        setSelectedModel(savedModel as ModelId);
-      }
-    }
-
-    function onModelChange(e: Event) {
-      const model = (e as CustomEvent<{ model: string }>).detail.model;
-      if (ALLOWED_MODELS.includes(model as ModelId)) {
-        setSelectedModel(model as ModelId);
-      }
-    }
     const savedPersonaId = localStorage.getItem("chat_active_persona_id");
     setActivePersonaId(savedPersonaId ?? null);
     setUserNote(localStorage.getItem(`chat_user_note_${conversationId}`) ?? "");
@@ -246,23 +234,21 @@ export default function ChatPage() {
         const nextFontSettings = parsed.aiBubbleBg === LEGACY_DEFAULT_AI_BUBBLE_BG
           ? { ...parsed, aiBubbleBg: DEFAULT_AI_BUBBLE_BG }
           : parsed;
-
         setFontSettings(nextFontSettings);
         localStorage.setItem("chat_font_settings", JSON.stringify(nextFontSettings));
-      } catch {
-        /* ignore */
-      }
+      } catch { /* ignore */ }
     }
-
-    window.addEventListener("chatModelChange", onModelChange);
-    return () => window.removeEventListener("chatModelChange", onModelChange);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // 모델 변경 핸들러
-  function handleModelChange(model: ModelId) {
+  // 모델 변경 핸들러 — conversations 테이블에 저장
+  async function handleModelChange(model: ModelId) {
     setSelectedModel(model);
-    localStorage.setItem("chat_model", model);
+    setModelMenuOpen(false);
+    try {
+      const supabase = createSupabaseBrowserClient();
+      await supabase.from("conversations").update({ model }).eq("id", conversationId);
+    } catch { /* ignore — state already updated */ }
   }
 
   // 페르소나 선택 핸들러
@@ -295,7 +281,7 @@ export default function ChatPage() {
 
       const { data, error } = await supabase
         .from("conversations")
-        .select("character_id")
+        .select("character_id, model")
         .eq("id", conversationId)
         .maybeSingle();
 
@@ -368,7 +354,9 @@ export default function ChatPage() {
       console.log("[chat] loadConversation success", {
         conversationId,
         character_id: data.character_id,
+        model: data.model,
       });
+      conversationModelRef.current = (data as { character_id: string; model?: string | null }).model ?? null;
       setCharacterId(data.character_id);
     }
     if (conversationId) void loadConversation();
@@ -389,6 +377,15 @@ export default function ChatPage() {
       if (ALLOWED_MODELS.includes(recModel as ModelId)) {
         setCharacterRecommendedModel(recModel as ModelId);
       }
+      // 모델 우선순위: 1) conversations.model  2) character.recommended_model  3) 기본값
+      const convModel = conversationModelRef.current;
+      const modelToUse: ModelId =
+        convModel && ALLOWED_MODELS.includes(convModel as ModelId)
+          ? (convModel as ModelId)
+          : ALLOWED_MODELS.includes(recModel as ModelId)
+            ? (recModel as ModelId)
+            : "gemini-2.5-pro";
+      setSelectedModel(modelToUse);
       if (!user) return;
       const [{ data: personaData }, { data: profileData }] = await Promise.all([
         supabase.from("personas").select("id, name, content, is_default").eq("user_id", user.id).order("created_at", { ascending: true }),
@@ -410,6 +407,19 @@ export default function ChatPage() {
     if (def?.name) return def.name;
     return profileNickname || "유저";
   })();
+
+  // 모델 드롭다운 바깥 클릭 닫기
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (modelMenuRef.current && !modelMenuRef.current.contains(e.target as Node)) {
+        setModelMenuOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  const { updateCredits } = useHeaderStore();
 
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
@@ -636,9 +646,18 @@ export default function ChatPage() {
         if (!jsonStr) return;
 
         try {
-          const data = JSON.parse(jsonStr) as { text?: string; done?: boolean; error?: string };
+          const data = JSON.parse(jsonStr) as {
+            text?: string;
+            done?: boolean;
+            error?: string;
+            freeBalance?: number;
+            paidBalance?: number;
+          };
           if (data.error) {
             setError(data.error);
+          }
+          if (data.done && typeof data.freeBalance === "number" && typeof data.paidBalance === "number") {
+            updateCredits(data.freeBalance, data.paidBalance);
           }
           if (!data.text) return;
 
@@ -749,14 +768,58 @@ export default function ChatPage() {
             <span className="text-base font-semibold text-[#1A1A1A]">대화</span>
           )}
 
-          {/* 우: 설정 버튼 */}
-          <button
-            type="button"
-            onClick={() => setSidePanelOpen((v) => !v)}
-            className="shrink-0 flex h-8 w-8 items-center justify-center rounded-lg border border-[#E0E0E0] bg-white text-sm text-[#666666] hover:bg-[#F0F0F0]"
-          >
-            ···
-          </button>
+          {/* 우: 모델 선택 + 설정 버튼 */}
+          <div className="flex shrink-0 items-center gap-2">
+            {/* 모델 드롭다운 */}
+            <div className="relative" ref={modelMenuRef}>
+              <button
+                type="button"
+                onClick={() => setModelMenuOpen((v) => !v)}
+                className="flex h-8 items-center gap-1.5 rounded-lg border border-[#E0E0E0] bg-white pl-2.5 pr-2 text-xs font-medium text-[#444444] hover:bg-[#F0F0F0]"
+              >
+                <svg
+                  width="11"
+                  height="11"
+                  viewBox="0 0 24 24"
+                  fill={CHAT_MODELS.find((m) => m.value === selectedModel)?.heartColor ?? "#FF0000"}
+                >
+                  <path d="M12 21.593c-.525-.507-5.453-5.017-7.005-6.938C2.464 11.977 2 10.025 2 8.196 2 4.771 4.812 2 8.286 2c1.773 0 3.416.808 4.714 2.136C14.298 2.808 15.941 2 17.714 2 21.188 2 24 4.771 24 8.196c0 1.83-.464 3.78-2.995 6.459-1.552 1.921-6.48 6.431-7.005 6.938l-1 .948-1-.948z" />
+                </svg>
+                <span>{CHAT_MODELS.find((m) => m.value === selectedModel)?.label ?? "모델 선택"}</span>
+                <svg className="h-3 w-3 text-[#999999]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+              {modelMenuOpen && (
+                <div className="absolute right-0 top-full z-50 mt-1 w-44 overflow-hidden rounded-xl border border-[#E0E0E0] bg-white py-1 shadow-lg">
+                  {CHAT_MODELS.map((m) => (
+                    <button
+                      key={m.value}
+                      type="button"
+                      onClick={() => void handleModelChange(m.value)}
+                      className={`flex w-full items-center gap-2 px-3 py-2 text-xs hover:bg-[#F8F8F8] ${
+                        selectedModel === m.value ? "font-semibold text-[#1A1A1A]" : "text-[#555555]"
+                      }`}
+                    >
+                      <svg width="11" height="11" viewBox="0 0 24 24" fill={m.heartColor}>
+                        <path d="M12 21.593c-.525-.507-5.453-5.017-7.005-6.938C2.464 11.977 2 10.025 2 8.196 2 4.771 4.812 2 8.286 2c1.773 0 3.416.808 4.714 2.136C14.298 2.808 15.941 2 17.714 2 21.188 2 24 4.771 24 8.196c0 1.83-.464 3.78-2.995 6.459-1.552 1.921-6.48 6.431-7.005 6.938l-1 .948-1-.948z" />
+                      </svg>
+                      {m.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* 설정 버튼 */}
+            <button
+              type="button"
+              onClick={() => setSidePanelOpen((v) => !v)}
+              className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#E0E0E0] bg-white text-sm text-[#666666] hover:bg-[#F0F0F0]"
+            >
+              ···
+            </button>
+          </div>
         </div>
 
         <div className="space-y-4 pb-52">
