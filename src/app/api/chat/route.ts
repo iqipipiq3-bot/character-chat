@@ -96,23 +96,23 @@ type HistoryRow = {
 const ALLOWED_MODELS = ["gemini-2.5-pro", "gemini-3.1-pro-preview"] as const;
 
 const MODEL_COSTS: Record<string, number> = {
-  "gemini-2.5-pro": 65,
-  "gemini-3.1-pro-preview": 90,
+  "gemini-2.5-pro": 70,
+  "gemini-3.1-pro-preview": 100,
 };
 
 const MODEL_CONFIG: Record<(typeof ALLOWED_MODELS)[number], ModelConfig> = {
   "gemini-2.5-pro": {
-    maxOutputTokens: 2500,
+    maxOutputTokens: 2000,
     temperature: 1.3,
     topP: 0.95,
     topK: 40,
     presencePenalty: null,
-    thinkingBudget: 500,
+    thinkingBudget: 200,
     thinkingLevel: null,
     systemSuffix: "",
   },
   "gemini-3.1-pro-preview": {
-    maxOutputTokens: 4000,
+    maxOutputTokens: 3500,
     temperature: 1.3,
     topP: 0.95,
     topK: 40,
@@ -121,7 +121,7 @@ const MODEL_CONFIG: Record<(typeof ALLOWED_MODELS)[number], ModelConfig> = {
     thinkingLevel: "low",
     systemSuffix: `
 Output Length Guidelines:
-- Write each response in approximately 1,800 to 2,200 Korean characters.
+- Write each response in approximately 1,500 to 2,000 Korean characters.
 - Never repeat descriptions, actions, or expressions already used in the same response.
 - Avoid padding or filler content. Every sentence must advance the scene or reveal character.
 - Do not summarize or restate what just happened. Move the story forward.
@@ -220,7 +220,7 @@ Output Format Rules:
 *His gaze slowly drifted toward the window. The tips of his fingers trembled ever so slightly.*
 "...I didn't see anything."
 *He let out a short breath, deliberately avoiding turning his head.*
-- Descriptive content may take up a larger portion (recommended ratio: 70% description, 30% dialogue)
+- Descriptive content may take up a larger portion (recommended ratio: 60% description, 40% dialogue)
 - Richly incorporate psychological, sensory, and environmental details
 - Never summarize or omit content; maintain a fully developed literary style throughout
 `.trim();
