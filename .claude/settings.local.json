@@ -20,7 +20,12 @@
       "Bash(grep -r \"alert\\\\|dialog\\\\|useState.*visible\\\\|useState.*show\" C:UsersUserDesktopcharacter-chat/src/app --include=*.tsx -l)",
       "Bash(find /c/Users/User/Desktop/character-chat -type f -path */api/* \\\\\\(-name *.ts -o -name *.tsx \\\\\\))",
       "Bash(find /c/Users/User/Desktop/character-chat -type f -name *.sql)",
-      "Bash(grep -r is_public /c/Users/User/Desktop/character-chat/src --include=*.tsx --include=*.ts)"
+      "Bash(grep -r is_public /c/Users/User/Desktop/character-chat/src --include=*.tsx --include=*.ts)",
+      "Bash(find /c/Users/User/Desktop/character-chat -type f \\\\\\(-name *schema* -o -name *migration* -o -name *database* \\\\\\) ! -path *.next* ! -path *node_modules* ! -path *.git*)",
+      "Bash(sed 's/.from\\(//')",
+      "Bash(sed \"s/[''''\"\"]//g\")",
+      "Bash(sed 's/from\\(//')",
+      "Bash(sed 's/\\).*//')"
     ]
   }
 }

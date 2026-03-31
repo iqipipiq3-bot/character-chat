@@ -11,6 +11,7 @@ import {
 import { GoogleAICacheManager } from "@google/generative-ai/server";
 import type { CachedContent } from "@google/generative-ai/server";
 import { replaceVariables } from "../../lib/replaceVariables";
+import { buildMemoryPrompt } from "../../lib/memory/buildMemoryPrompt";
 
 export const maxDuration = 120;
 
@@ -107,12 +108,12 @@ const MODEL_CONFIG: Record<(typeof ALLOWED_MODELS)[number], ModelConfig> = {
     topP: 0.95,
     topK: 40,
     presencePenalty: null,
-    thinkingBudget: 200,
+    thinkingBudget: 500,
     thinkingLevel: null,
     systemSuffix: "",
   },
   "gemini-3.1-pro-preview": {
-    maxOutputTokens: 3500,
+    maxOutputTokens: 3200,
     temperature: 1.3,
     topP: 0.95,
     topK: 40,
@@ -149,6 +150,41 @@ const MODEL_PRICING: Record<(typeof ALLOWED_MODELS)[number], ModelPricing> = {
 };
 
 const CACHE_STORAGE_RATE = 4.50 / 1_000_000; // $4.50 / 1M tokens / hour
+
+const MEMORY_EXTRACT_SYSTEM_PROMPT = `You are a memory extraction assistant for a character roleplay chat application.
+Analyze the given conversation and extract memories selectively. Only extract if there is meaningful new information.
+Output ONLY a valid JSON array with no explanation, markdown, or code fences.
+If nothing is worth extracting, output an empty array: []
+
+=== TYPE DEFINITIONS ===
+
+1. core_concept (핵심 컨셉)
+   - Extract only the essential concepts of THIS roleplay session: setting, world background, initial meeting, key premises, character roles.
+   - Maximum 5 entries total across all time. If 5 already exist in the provided context, do NOT extract any core_concept this turn.
+   - Skip anything already captured in existing core_concept memories or anything not critically important.
+   - Do NOT duplicate previously established concepts.
+   - importance: 5 (critical) or 4 (important)
+
+2. timeline (사건 타임라인)
+   - Extract at most 1 entry for this conversation window.
+   - SKIP if there are no significant changes compared to previous turns (e.g. only small talk, no plot development).
+   - content format (Korean): "[turn_range] | [rp_date] | [사건 내용 간결하게 30자 이내]"
+   - rp_date: In-world date/time if mentioned, otherwise "알 수 없음".
+   - turn_range: Use the turn range provided in the request (e.g. "1-5").
+   - importance: 4 or 5
+
+3. relationship (관계도)
+   - Extract at most 1 entry.
+   - SKIP if the relationship or emotional dynamic has not meaningfully changed since the previous turn.
+   - content format (Korean, use exactly this structure):
+     "유저와의 관계: [한 줄]\n유저를 향한 감정: [한 줄]"
+   - importance: 3, 4, or 5
+
+=== OUTPUT FORMAT ===
+Each item: { type, content (Korean), importance, rp_date? (timeline only), turn_range? (timeline only) }
+
+Example:
+[{"type":"core_concept","content":"배경은 19세기 귀족 사회이며, 캐릭터는 공작 가문의 장남이다.","importance":5},{"type":"timeline","content":"1-5 | 알 수 없음 | 두 사람이 처음 만나 긴장감 속에 대화를 나눴다.","importance":4,"rp_date":"알 수 없음","turn_range":"1-5"},{"type":"relationship","content":"유저와의 관계: 처음 만난 사이로 서로를 탐색 중\n유저를 향한 감정: 경계심 속에 묘한 흥미를 느낌","importance":4}]`;
 
 function buildBulletList(items: Array<string | null | undefined>) {
   return items
@@ -317,7 +353,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // ── Batch 1: 인증 후 독립 쿼리 6개 병렬 실행 ────────────────────────────
+    // ── Batch 1: 인증 후 독립 쿼리 7개 병렬 실행 ────────────────────────────
     const [
       { data: character, error: characterError },
       { data: lorebooks },
@@ -325,6 +361,7 @@ export async function POST(request: NextRequest) {
       { data: existingConversation, error: conversationError },
       { data: history, error: historyError },
       { count: totalUserMsgCount },
+      { data: memoriesData },
     ] = await Promise.all([
       supabase
         .from("characters")
@@ -366,6 +403,14 @@ export async function POST(request: NextRequest) {
         .select("id", { count: "exact", head: true })
         .eq("conversation_id", conversationId)
         .eq("role", "user"),
+      supabase
+        .from("conversation_memories")
+        .select("id, type, content, importance, is_active, source, created_at, updated_at")
+        .eq("conversation_id", conversationId)
+        .eq("user_id", user.id)
+        .eq("is_active", true)
+        .order("importance", { ascending: false })
+        .limit(20),
     ]);
 
     if (characterError) {
@@ -491,11 +536,16 @@ export async function POST(request: NextRequest) {
       lorebookEntries: matchingLorebooks,
     });
 
-    const finalSystemPrompt = replacePromptVariables(
+    const finalSystemPromptBase = replacePromptVariables(
       `${baseSystemPrompt}\n${modelCfg.systemSuffix}`.trim(),
       userName,
       character.name
     );
+
+    const memoryBlock = buildMemoryPrompt(memoriesData ?? []);
+    const finalSystemPrompt = memoryBlock
+      ? `${finalSystemPromptBase}\n\n${memoryBlock}`
+      : finalSystemPromptBase;
 
     let activeCachedContent: CachedContent | null = null;
     let cacheStorageTokens = 0;
@@ -769,6 +819,110 @@ export async function POST(request: NextRequest) {
               reference_id: assistantMessageId,
             }),
           ]);
+
+          // ── 기억 추출 (5번째 턴마다, 실패해도 응답에 영향 없음) ──
+          // totalUserMsgCount는 이번 턴 insert 이전 카운트이므로 +1이 현재 턴 번호
+          const currentTurnCount = (totalUserMsgCount ?? 0) + 1;
+          if (currentTurnCount % 5 === 0) try {
+            const turnStart = currentTurnCount - 4;
+            const turnRangeLabel = `${turnStart}-${currentTurnCount}`;
+
+            const extractGenAI = new GoogleGenerativeAI(apiKey);
+            const extractModel = extractGenAI.getGenerativeModel({
+              model: "gemini-3.1-flash-lite-preview",
+              systemInstruction: MEMORY_EXTRACT_SYSTEM_PROMPT,
+              generationConfig: { temperature: 0.3, maxOutputTokens: 1024 },
+            });
+            const turnText = [
+              `[현재 턴 구간: ${turnRangeLabel}]`,
+              `유저: ${message}`,
+              `캐릭터: ${finalReply}`,
+            ].join("\n");
+            const extractResult = await extractModel.generateContent(turnText);
+            const rawMemoryText = extractResult.response.text().trim();
+
+            let extractedMemories: Array<{
+              type: string;
+              content: string;
+              importance: number;
+              rp_date?: string;
+              turn_range?: string;
+            }> = [];
+            try {
+              const cleaned = rawMemoryText
+                .replace(/^```json\s*/i, "")
+                .replace(/^```\s*/i, "")
+                .replace(/\s*```$/i, "")
+                .trim();
+              const parsed = JSON.parse(cleaned) as unknown;
+              if (Array.isArray(parsed)) {
+                extractedMemories = parsed as typeof extractedMemories;
+              }
+            } catch {
+              // JSON 파싱 실패 시 무시
+            }
+
+            // ── 유효 타입 필터링 ──────────────────────────────────────────
+            const VALID_TYPES = ["core_concept", "timeline", "relationship"];
+            const filtered = extractedMemories.filter((m) => {
+              const isValid = VALID_TYPES.includes(m.type);
+              if (!isValid) console.error("[api/chat] 유효하지 않은 memory_type 걸러짐:", m.type, m);
+              return isValid;
+            });
+
+            if (filtered.length === 0) {
+              console.error("[api/chat] 유효한 기억 항목 없음, insert 스킵");
+            } else {
+              console.log("[api/chat] 기억 저장 시도:", JSON.stringify(filtered));
+
+              let savedCount = 0;
+              for (const m of filtered) {
+                // timeline: 동일 turn_range 중복 스킵
+                if (m.type === "timeline" && m.turn_range) {
+                  const { data: existing } = await supabase
+                    .from("conversation_memories")
+                    .select("id")
+                    .eq("conversation_id", conversationId)
+                    .eq("type", "timeline")
+                    .eq("turn_range", m.turn_range)
+                    .maybeSingle();
+                  if (existing) continue;
+                }
+
+                // relationship: 기존 비활성화
+                if (m.type === "relationship") {
+                  await supabase
+                    .from("conversation_memories")
+                    .update({ is_active: false })
+                    .eq("conversation_id", conversationId)
+                    .eq("type", "relationship")
+                    .eq("is_active", true);
+                }
+
+                const { error: insertError } = await supabase.from("conversation_memories").insert({
+                  conversation_id: conversationId,
+                  character_id: characterId,
+                  user_id: user.id,
+                  memory_type: m.type,
+                  content: m.content,
+                  importance: m.importance,
+                  rp_date: m.rp_date ?? null,
+                  turn_range: m.turn_range ?? null,
+                  source: "ai",
+                  is_active: true,
+                });
+
+                if (insertError) {
+                  console.error("[api/chat] 기억 insert 실패:", insertError);
+                } else {
+                  savedCount++;
+                }
+              }
+              console.log("[api/chat] 기억 저장 완료:", savedCount + "개");
+            }
+          } catch (memErr) {
+            console.error("[api/chat] 기억 추출 실패 (무시):", memErr);
+          } // end if (currentTurnCount % 10 === 0)
 
           if (insertError) {
             console.error("[api/chat] DB insert error:", insertError.message);

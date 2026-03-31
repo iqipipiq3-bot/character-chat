@@ -15,6 +15,7 @@ import {
   type FontSettings,
   type Persona,
 } from "./ChatSidePanel";
+import { MemoryPanel } from "../../components/memory/MemoryPanel";
 import { replaceVariables } from "../../lib/replaceVariables";
 
 type Message = {
@@ -205,6 +206,18 @@ export default function ChatPage() {
 
   // 사이드 패널
   const [sidePanelOpen, setSidePanelOpen] = useState(false);
+
+  // 기억 패널
+  const [memoryPanelOpen, setMemoryPanelOpen] = useState(false);
+  const [memoryCount, setMemoryCount] = useState(0);
+
+  useEffect(() => {
+    if (!conversationId) return;
+    fetch(`/api/memories/${conversationId}`)
+      .then((r) => r.json())
+      .then((json: { memories?: unknown[] }) => setMemoryCount(json.memories?.length ?? 0))
+      .catch(() => {});
+  }, [conversationId]);
 
   // 모델 선택
   const [selectedModel, setSelectedModel] = useState<ModelId>("gemini-2.5-pro");
@@ -433,6 +446,8 @@ export default function ChatPage() {
   const streamingReaderRef = useRef<ReadableStreamDefaultReader<Uint8Array> | null>(null);
   const typingQueueRef = useRef<string[]>([]);
   const isTypingRef = useRef(false);
+  const bottomRef = useRef<HTMLDivElement | null>(null);
+  const [isUserScrolling, setIsUserScrolling] = useState(false);
 
   useEffect(() => {
     async function loadMessages() {
@@ -460,6 +475,9 @@ export default function ChatPage() {
             return 0;
           });
           setMessages(fallbackSorted);
+          requestAnimationFrame(() => {
+            bottomRef.current?.scrollIntoView({ behavior: "instant" });
+          });
           return;
         }
         setError(fetchError.message);
@@ -475,12 +493,34 @@ export default function ChatPage() {
         return 0;
       });
       setMessages(sorted);
+      // 최초 로드 완료 후 즉시 맨 아래로
+      requestAnimationFrame(() => {
+        bottomRef.current?.scrollIntoView({ behavior: "instant" });
+      });
     }
 
     if (conversationId) {
       void loadMessages();
     }
   }, [conversationId]);
+
+  // 유저 스크롤 감지: 올리면 isUserScrolling=true, 맨 아래 도달하면 false
+  useEffect(() => {
+    function handleScroll() {
+      const el = document.documentElement;
+      const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+      setIsUserScrolling(distanceFromBottom > 80);
+    }
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    return () => window.removeEventListener("scroll", handleScroll);
+  }, []);
+
+  // 스트리밍 중 메시지 변경 시 자동 스크롤 (유저가 위로 올렸으면 스킵)
+  useEffect(() => {
+    if (!loading) return;
+    if (isUserScrolling) return;
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, loading, isUserScrolling]);
 
   async function handleDeleteMessage(messageId: string) {
     const ok = window.confirm("정말 삭제하시겠습니까?");
@@ -579,10 +619,12 @@ export default function ChatPage() {
       { id: userTempId, role: "user", content: text, created_at: new Date().toISOString() },
       { id: loadingTempId, role: "loading", content: "", created_at: new Date().toISOString() },
     ]);
+    setIsUserScrolling(false);
     setInput("");
 
     // React가 렌더링할 시간을 주고 fetch 호출
     await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
 
     try {
       const res = await fetch("/api/chat", {
@@ -811,6 +853,23 @@ export default function ChatPage() {
               )}
             </div>
 
+            {/* 기억 버튼 */}
+            <button
+              type="button"
+              onClick={() => setMemoryPanelOpen((v) => !v)}
+              className="relative flex h-8 w-8 items-center justify-center rounded-lg border border-[#E0E0E0] bg-white text-[#666666] hover:bg-[#F0F0F0]"
+              title="장기 기억"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="h-4 w-4">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9.53 16.122a3 3 0 0 0-5.78 1.128 2.25 2.25 0 0 1-2.4 2.245 4.5 4.5 0 0 0 8.4-2.245c0-.399-.078-.78-.22-1.128Zm0 0a15.998 15.998 0 0 0 3.388-1.62m-5.043-.025a15.994 15.994 0 0 1 1.622-3.395m3.42 3.42a15.995 15.995 0 0 0 4.764-4.648l3.876-5.814a1.151 1.151 0 0 0-1.597-1.597L14.146 6.32a15.996 15.996 0 0 0-4.649 4.763m3.42 3.42a6.776 6.776 0 0 0-3.42-3.42" />
+              </svg>
+              {memoryCount > 0 && (
+                <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-[#1A1A2E] px-1 text-[9px] font-bold text-white">
+                  {memoryCount > 99 ? "99+" : memoryCount}
+                </span>
+              )}
+            </button>
+
             {/* 설정 버튼 */}
             <button
               type="button"
@@ -971,6 +1030,7 @@ export default function ChatPage() {
               </div>
             ))
           )}
+          <div ref={bottomRef} />
         </div>
 
         {error ? (
@@ -1023,6 +1083,24 @@ export default function ChatPage() {
         onFontSettingsChange={handleFontSettingsChange}
         onEditPersonasClick={() => router.push("/personas")}
       />
+
+      {/* 기억 패널 */}
+      {characterId && (
+        <MemoryPanel
+          conversationId={conversationId}
+          characterId={characterId}
+          characterName={characterName ?? undefined}
+          isOpen={memoryPanelOpen}
+          onClose={() => {
+            setMemoryPanelOpen(false);
+            // 패널 닫힐 때 뱃지 카운트 갱신
+            fetch(`/api/memories/${conversationId}`)
+              .then((r) => r.json())
+              .then((json: { memories?: unknown[] }) => setMemoryCount(json.memories?.length ?? 0))
+              .catch(() => {});
+          }}
+        />
+      )}
     </div>
   );
 }

@@ -15,6 +15,7 @@ type Props = {
   currentUserId: string | null;
   isCharacterOwner: boolean;
   userName: string;
+  initialIsFavorited: boolean;
 };
 
 function formatDate(iso: string) {
@@ -40,6 +41,7 @@ export function CharacterDetailClient({
   currentUserId,
   isCharacterOwner,
   userName,
+  initialIsFavorited,
 }: Props) {
   const router = useRouter();
   const [startingChat, setStartingChat] = useState(false);
@@ -51,6 +53,38 @@ export function CharacterDetailClient({
   const [editContent, setEditContent] = useState("");
   const [savingEditId, setSavingEditId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [isFavorited, setIsFavorited] = useState(initialIsFavorited);
+  const [togglingFavorite, setTogglingFavorite] = useState(false);
+
+  async function toggleFavorite() {
+    if (!currentUserId) {
+      router.push(`/login?next=/explore/${character.id}`);
+      return;
+    }
+    setTogglingFavorite(true);
+    try {
+      const supabase = createSupabaseBrowserClient();
+      if (isFavorited) {
+        const { error } = await supabase
+          .from("favorites")
+          .delete()
+          .eq("user_id", currentUserId)
+          .eq("character_id", character.id);
+        if (error) throw error;
+        setIsFavorited(false);
+      } else {
+        const { error } = await supabase
+          .from("favorites")
+          .insert({ user_id: currentUserId, character_id: character.id });
+        if (error) throw error;
+        setIsFavorited(true);
+      }
+    } catch (err) {
+      window.alert(err instanceof Error ? err.message : "즐겨찾기 처리 중 오류가 발생했습니다.");
+    } finally {
+      setTogglingFavorite(false);
+    }
+  }
 
   function handleStartChat() {
     if (!currentUserId) {
@@ -300,14 +334,29 @@ export function CharacterDetailClient({
             </a>
           </p>
 
-          <button
-            type="button"
-            disabled={startingChat}
-            onClick={() => void handleStartChat()}
-            className="mt-4 rounded-lg bg-zinc-900 px-5 py-2 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-60 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
-          >
-            {startingChat ? "여는 중..." : "대화 시작"}
-          </button>
+          <div className="mt-4 flex items-center gap-2">
+            <button
+              type="button"
+              disabled={startingChat}
+              onClick={() => void handleStartChat()}
+              className="rounded-lg bg-zinc-900 px-5 py-2 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-60 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
+            >
+              {startingChat ? "여는 중..." : "대화 시작"}
+            </button>
+            <button
+              type="button"
+              disabled={togglingFavorite}
+              onClick={() => void toggleFavorite()}
+              title={isFavorited ? "즐겨찾기 해제" : "즐겨찾기 추가"}
+              className={`rounded-lg border px-3 py-2 text-sm transition-colors disabled:opacity-60 ${
+                isFavorited
+                  ? "border-yellow-400 bg-yellow-50 text-yellow-500 hover:bg-yellow-100 dark:border-yellow-600/60 dark:bg-yellow-950/30 dark:text-yellow-400 dark:hover:bg-yellow-900/30"
+                  : "border-zinc-300 text-zinc-400 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-500 dark:hover:bg-zinc-800"
+              }`}
+            >
+              {isFavorited ? "★" : "☆"}
+            </button>
+          </div>
         </div>
       </div>
 

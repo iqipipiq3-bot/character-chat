@@ -210,12 +210,12 @@ export function HeaderClient({ displayName, isLoggedIn, avatarUrl, userId, follo
                   </div>
                 </div>
 
-                {/* 팔로워 / 팔로잉 / 큐브 잔액 — 4등분 */}
-                <div className="mt-3 grid grid-cols-4 divide-x divide-zinc-100 border-t border-zinc-100 pt-3 dark:divide-zinc-800 dark:border-zinc-800">
+                {/* 1줄: 팔로워 / 팔로잉 */}
+                <div className="mt-3 grid grid-cols-2 divide-x divide-zinc-100 border-t border-zinc-100 pt-3 dark:divide-zinc-800 dark:border-zinc-800">
                   <Link
                     href={userId ? `/creator/${userId}` : "#"}
                     onClick={() => setDropdownOpen(false)}
-                    className="group flex flex-col items-center gap-0.5 px-1"
+                    className="group flex flex-col items-center gap-0.5 px-2"
                   >
                     <span className="text-sm font-bold text-zinc-900 group-hover:text-zinc-600 dark:text-zinc-50 dark:group-hover:text-zinc-400">
                       {followerCount.toLocaleString()}
@@ -223,46 +223,46 @@ export function HeaderClient({ displayName, isLoggedIn, avatarUrl, userId, follo
                     <span className="text-[10px] text-zinc-500 group-hover:text-zinc-400 dark:text-zinc-500">팔로워</span>
                   </Link>
                   <Link
-                    href="/mypage"
+                    href="/my/following"
                     onClick={() => setDropdownOpen(false)}
-                    className="group flex flex-col items-center gap-0.5 px-1"
+                    className="group flex flex-col items-center gap-0.5 px-2"
                   >
                     <span className="text-sm font-bold text-zinc-900 group-hover:text-zinc-600 dark:text-zinc-50 dark:group-hover:text-zinc-400">
                       {followingCount.toLocaleString()}
                     </span>
                     <span className="text-[10px] text-zinc-500 group-hover:text-zinc-400 dark:text-zinc-500">팔로잉</span>
                   </Link>
+                </div>
+
+                {/* 2줄: 무료큐브 / 프리즘큐브 */}
+                <div className="mt-3 grid grid-cols-2 divide-x divide-zinc-100 border-t border-zinc-100 pt-3 pb-1 dark:divide-zinc-800 dark:border-zinc-800">
                   {/* 무료 큐브 */}
-                  <div className="flex flex-col items-center gap-0.5 px-1">
-                    <div className="flex items-center gap-1">
-                      <svg viewBox="0 0 24 24" fill="currentColor" className="h-3 w-3 text-zinc-400">
-                        <path d="M21 16.5c0 .38-.21.71-.53.88l-7.9 4.44c-.16.12-.36.18-.57.18-.21 0-.41-.06-.57-.18l-7.9-4.44A.99.99 0 013 16.5v-9c0-.38.21-.71.53-.88l7.9-4.44C11.59 2.06 11.79 2 12 2c.21 0 .41.06.57.18l7.9 4.44c.32.17.53.5.53.88v9zM12 4.15L6.04 7.5 12 10.85l5.96-3.35L12 4.15zM5 15.91l6 3.38v-6.71L5 9.21v6.7zm8 3.38l6-3.38V9.21l-6 3.37v6.71z" />
-                      </svg>
-                      <span className="text-sm font-bold text-zinc-900 dark:text-zinc-50">
-                        {localFreeBalance.toLocaleString()}
-                      </span>
-                    </div>
-                    <span className="text-[10px] text-zinc-500 dark:text-zinc-500">무료</span>
+                  <div className="flex flex-col items-center gap-0.5 px-2">
+                    <svg viewBox="0 0 24 24" fill="currentColor" className="h-3.5 w-3.5 shrink-0 text-zinc-400">
+                      <path d="M21 16.5c0 .38-.21.71-.53.88l-7.9 4.44c-.16.12-.36.18-.57.18-.21 0-.41-.06-.57-.18l-7.9-4.44A.99.99 0 013 16.5v-9c0-.38.21-.71.53-.88l7.9-4.44C11.59 2.06 11.79 2 12 2c.21 0 .41.06.57.18l7.9 4.44c.32.17.53.5.53.88v9zM12 4.15L6.04 7.5 12 10.85l5.96-3.35L12 4.15zM5 15.91l6 3.38v-6.71L5 9.21v6.7zm8 3.38l6-3.38V9.21l-6 3.37v6.71z" />
+                    </svg>
+                    <span className="text-sm font-bold text-zinc-900 dark:text-zinc-50">
+                      {localFreeBalance.toLocaleString()}
+                    </span>
+                    <span className="text-[10px] text-zinc-500 dark:text-zinc-500">무료 큐브</span>
                   </div>
                   {/* 프리즘 큐브 */}
-                  <div className="flex flex-col items-center gap-0.5 px-1">
-                    <div className="flex items-center gap-1">
-                      <svg viewBox="0 0 24 24" className="h-3 w-3 shrink-0">
-                        <defs>
-                          <linearGradient id="prism-grad-dropdown" x1="0%" y1="0%" x2="100%" y2="100%">
-                            <stop offset="0%" stopColor="#a78bfa" />
-                            <stop offset="33%" stopColor="#60a5fa" />
-                            <stop offset="66%" stopColor="#34d399" />
-                            <stop offset="100%" stopColor="#f472b6" />
-                          </linearGradient>
-                        </defs>
-                        <path fill="url(#prism-grad-dropdown)" d="M21 16.5c0 .38-.21.71-.53.88l-7.9 4.44c-.16.12-.36.18-.57.18-.21 0-.41-.06-.57-.18l-7.9-4.44A.99.99 0 013 16.5v-9c0-.38.21-.71.53-.88l7.9-4.44C11.59 2.06 11.79 2 12 2c.21 0 .41.06.57.18l7.9 4.44c.32.17.53.5.53.88v9zM12 4.15L6.04 7.5 12 10.85l5.96-3.35L12 4.15zM5 15.91l6 3.38v-6.71L5 9.21v6.7zm8 3.38l6-3.38V9.21l-6 3.37v6.71z" />
-                      </svg>
-                      <span className="text-sm font-bold text-zinc-900 dark:text-zinc-50">
-                        {localPaidBalance.toLocaleString()}
-                      </span>
-                    </div>
-                    <span className="text-[10px] text-zinc-500 dark:text-zinc-500">프리즘</span>
+                  <div className="flex flex-col items-center gap-0.5 px-2">
+                    <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 shrink-0">
+                      <defs>
+                        <linearGradient id="prism-grad-dropdown" x1="0%" y1="0%" x2="100%" y2="100%">
+                          <stop offset="0%" stopColor="#a78bfa" />
+                          <stop offset="33%" stopColor="#60a5fa" />
+                          <stop offset="66%" stopColor="#34d399" />
+                          <stop offset="100%" stopColor="#f472b6" />
+                        </linearGradient>
+                      </defs>
+                      <path fill="url(#prism-grad-dropdown)" d="M21 16.5c0 .38-.21.71-.53.88l-7.9 4.44c-.16.12-.36.18-.57.18-.21 0-.41-.06-.57-.18l-7.9-4.44A.99.99 0 013 16.5v-9c0-.38.21-.71.53-.88l7.9-4.44C11.59 2.06 11.79 2 12 2c.21 0 .41.06.57.18l7.9 4.44c.32.17.53.5.53.88v9zM12 4.15L6.04 7.5 12 10.85l5.96-3.35L12 4.15zM5 15.91l6 3.38v-6.71L5 9.21v6.7zm8 3.38l6-3.38V9.21l-6 3.37v6.71z" />
+                    </svg>
+                    <span className="text-sm font-bold text-zinc-900 dark:text-zinc-50">
+                      {localPaidBalance.toLocaleString()}
+                    </span>
+                    <span className="text-[10px] text-zinc-500 dark:text-zinc-500">프리즘 큐브</span>
                   </div>
                 </div>
               </div>

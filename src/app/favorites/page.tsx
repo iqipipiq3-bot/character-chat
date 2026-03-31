@@ -13,6 +13,8 @@ function getSupabaseEnv() {
 type FavoriteCharacter = {
   id: string;
   name: string;
+  description: string | null;
+  thumbnail_url: string | null;
   model: string | null;
   is_public: boolean | null;
 };
@@ -55,7 +57,7 @@ export default async function FavoritesPage() {
   if (characterIds.length > 0) {
     const { data } = await supabase
       .from("characters")
-      .select("id, name, model, is_public")
+      .select("id, name, description, thumbnail_url, model, is_public")
       .in("id", characterIds);
     characters = (data ?? []) as FavoriteCharacter[];
   }

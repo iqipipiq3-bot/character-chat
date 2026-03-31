@@ -160,6 +160,18 @@ export default async function CharacterDetailPage({
     author_nickname: nicknameMap[c.user_id as string] ?? "알 수 없음",
   }));
 
+  // 즐겨찾기 여부 확인
+  let initialIsFavorited = false;
+  if (user) {
+    const { data: favData } = await supabase
+      .from("favorites")
+      .select("character_id")
+      .eq("user_id", user.id)
+      .eq("character_id", characterId)
+      .maybeSingle();
+    initialIsFavorited = !!favData;
+  }
+
   const characterDetail: CharacterDetail = {
     id: character.id as string,
     name: character.name as string,
@@ -183,6 +195,7 @@ export default async function CharacterDetailPage({
         currentUserId={user?.id ?? null}
         isCharacterOwner={user?.id === character.user_id}
         userName={userName}
+        initialIsFavorited={initialIsFavorited}
       />
     </div>
   );

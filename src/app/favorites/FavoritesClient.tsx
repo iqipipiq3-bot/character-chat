@@ -4,10 +4,13 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createSupabaseBrowserClient } from "../lib/supabase";
+import { getCardGradient } from "../lib/gradient";
 
 type FavoriteCharacter = {
   id: string;
   name: string;
+  description: string | null;
+  thumbnail_url: string | null;
   model: string | null;
   is_public: boolean | null;
 };
@@ -48,7 +51,7 @@ export function FavoritesClient({ initial }: { initial: FavoriteCharacter[] }) {
         <div className="flex items-center gap-4">
           <button
             type="button"
-            onClick={() => router.push("/dashboard")}
+            onClick={() => router.push("/mypage")}
             className="text-sm font-medium text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
           >
             ← 마이페이지로
@@ -68,10 +71,10 @@ export function FavoritesClient({ initial }: { initial: FavoriteCharacter[] }) {
               즐겨찾기한 캐릭터가 없습니다.
             </p>
             <Link
-              href="/dashboard"
+              href="/explore"
               className="mt-4 inline-block rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
             >
-              캐릭터 목록으로
+              캐릭터 둘러보기
             </Link>
           </div>
         ) : (
@@ -79,33 +82,56 @@ export function FavoritesClient({ initial }: { initial: FavoriteCharacter[] }) {
             {characters.map((character) => (
               <li
                 key={character.id}
-                className="flex items-center justify-between gap-3 rounded-lg border border-zinc-200 bg-white px-4 py-3 text-sm dark:border-zinc-800 dark:bg-zinc-950"
+                className="flex items-center gap-4 rounded-xl border border-zinc-200 bg-white px-4 py-3 dark:border-zinc-800 dark:bg-zinc-950"
               >
-                <div className="min-w-0">
-                  <p className="truncate font-medium">⭐ {character.name}</p>
-                  <p className="mt-1 text-xs text-zinc-600 dark:text-zinc-400">
-                    모델: {character.model || "Gemini 2.5 Pro"}
-                    {character.is_public ? (
-                      <span className="ml-2 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-700 ring-1 ring-emerald-100">
-                        공개중
-                      </span>
-                    ) : null}
-                  </p>
+                {/* 썸네일 */}
+                <Link href={`/explore/${character.id}`} className="shrink-0">
+                  <div className="h-12 w-12 overflow-hidden rounded-xl">
+                    {character.thumbnail_url ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={character.thumbnail_url}
+                        alt={character.name}
+                        className="h-full w-full object-cover object-top"
+                      />
+                    ) : (
+                      <div className={`flex h-full w-full items-center justify-center ${getCardGradient(character.id)}`}>
+                        <span className="text-lg font-bold text-white drop-shadow">
+                          {character.name.charAt(0)}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                </Link>
+
+                {/* 정보 */}
+                <div className="min-w-0 flex-1">
+                  <Link href={`/explore/${character.id}`} className="hover:underline">
+                    <p className="truncate text-sm font-semibold">{character.name}</p>
+                  </Link>
+                  {character.description && (
+                    <p className="mt-0.5 line-clamp-1 text-xs text-zinc-500 dark:text-zinc-400">
+                      {character.description}
+                    </p>
+                  )}
                 </div>
-                <div className="flex items-center gap-2">
+
+                {/* 액션 */}
+                <div className="flex shrink-0 items-center gap-2">
                   <Link
-                    href={`/chat/${character.id}`}
+                    href={`/explore/${character.id}`}
                     className="rounded-full border border-zinc-200 px-3 py-1 text-xs font-medium hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
                   >
-                    대화 시작
+                    보러가기
                   </Link>
                   <button
                     type="button"
                     onClick={() => void handleRemoveFavorite(character.id)}
                     disabled={removingId === character.id}
-                    className="rounded-full border border-red-200 px-3 py-1 text-xs font-medium text-red-700 hover:bg-red-50 disabled:opacity-60 dark:border-red-900/60 dark:text-red-200 dark:hover:bg-red-950/30"
+                    className="rounded-full border border-zinc-200 px-3 py-1 text-xs font-medium text-zinc-500 hover:bg-zinc-100 disabled:opacity-60 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-900"
+                    title="즐겨찾기 해제"
                   >
-                    {removingId === character.id ? "해제 중..." : "즐겨찾기 해제"}
+                    {removingId === character.id ? "..." : "★"}
                   </button>
                 </div>
               </li>
