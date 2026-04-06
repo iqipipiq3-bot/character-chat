@@ -52,7 +52,7 @@ export default async function AttendancePage() {
   const checkedInToday = checkinDates.includes(today);
 
   // 연속 출석 계산을 위해 최근 62일 데이터 조회
-  const streakFrom = new Date(Date.now() + 9 * 60 * 60 * 1000);
+  const streakFrom = new Date(today);
   streakFrom.setDate(streakFrom.getDate() - 62);
   const streakFromStr = streakFrom.toISOString().split("T")[0]!;
 

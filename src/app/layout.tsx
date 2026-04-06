@@ -24,6 +24,10 @@ export const metadata: Metadata = {
   description: "AI 캐릭터와 대화하세요",
 };
 
+function getKSTDateString() {
+  return new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().split("T")[0]!;
+}
+
 function getSupabaseEnv() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -57,13 +61,27 @@ export default async function RootLayout({
   let userId: string | null = null;
   let followerCount = 0;
   let followingCount = 0;
+  let freeBalance = 0;
+  let paidBalance = 0;
+  let checkedInToday = false;
+
   if (user) {
     userId = user.id;
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("nickname, avatar_url")
-      .eq("user_id", user.id)
-      .maybeSingle();
+    const kstToday = getKSTDateString();
+
+    const [
+      { data: profile },
+      { count: fwrCount },
+      { count: fwingCount },
+      { data: creditsData },
+      { data: checkinData },
+    ] = await Promise.all([
+      supabase.from("profiles").select("nickname, avatar_url").eq("user_id", user.id).maybeSingle(),
+      supabase.from("follows").select("*", { count: "exact", head: true }).eq("following_id", user.id),
+      supabase.from("follows").select("*", { count: "exact", head: true }).eq("follower_id", user.id),
+      supabase.from("user_credits").select("free_balance, paid_balance").eq("user_id", user.id).maybeSingle(),
+      supabase.from("daily_checkins").select("id").eq("user_id", user.id).eq("checked_date", kstToday).maybeSingle(),
+    ]);
 
     const nickname = (profile?.nickname as string | null) ?? "";
     avatarUrl = (profile?.avatar_url as string | null) ?? null;
@@ -75,43 +93,8 @@ export default async function RootLayout({
       displayName = "사용자";
     }
 
-    // 팔로워 수 (나를 팔로우하는 사람)
-    const { count: fwrCount } = await supabase
-      .from("follows")
-      .select("*", { count: "exact", head: true })
-      .eq("following_id", user.id);
     followerCount = fwrCount ?? 0;
-
-    // 팔로잉 수 (내가 팔로우하는 사람)
-    const { count: fwingCount } = await supabase
-      .from("follows")
-      .select("*", { count: "exact", head: true })
-      .eq("follower_id", user.id);
     followingCount = fwingCount ?? 0;
-  }
-
-  // 크레딧 잔액 + 오늘 출석 여부
-  let freeBalance = 0;
-  let paidBalance = 0;
-  let checkedInToday = false;
-
-  if (user) {
-    const kstToday = new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().split("T")[0]!;
-
-    const [{ data: creditsData }, { data: checkinData }] = await Promise.all([
-      supabase
-        .from("user_credits")
-        .select("free_balance, paid_balance")
-        .eq("user_id", user.id)
-        .maybeSingle(),
-      supabase
-        .from("daily_checkins")
-        .select("id")
-        .eq("user_id", user.id)
-        .eq("checked_date", kstToday)
-        .maybeSingle(),
-    ]);
-
     freeBalance = creditsData?.free_balance ?? 0;
     paidBalance = creditsData?.paid_balance ?? 0;
     checkedInToday = !!checkinData;

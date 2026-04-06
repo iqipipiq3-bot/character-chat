@@ -81,7 +81,7 @@ export function AttendanceClient({
     } finally {
       setLoading(false);
     }
-  }, [loading, checkedInToday, today]);
+  }, [loading, checkedInToday, today, updateCredits, setHeaderCheckedIn]);
 
   const calendarCells: Array<number | null> = [
     ...Array(firstDayOfWeek).fill(null),

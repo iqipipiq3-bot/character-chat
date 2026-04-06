@@ -647,6 +647,9 @@ export default function ChatPage() {
     ]);
     setIsUserScrolling(false);
     setInput("");
+    if (inputTextareaRef.current) {
+      inputTextareaRef.current.style.height = "auto";
+    }
 
     // React가 렌더링할 시간을 주고 fetch 호출
     await new Promise<void>((resolve) => setTimeout(resolve, 0));
@@ -1049,6 +1052,13 @@ export default function ChatPage() {
                             onChange={(e) => {
                               setEditText(e.target.value);
                               autosizeEditTextarea(e.currentTarget);
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter" && e.ctrlKey) {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                return;
+                              }
                             }}
                             className="box-border block w-full resize-none rounded-lg border border-[#E0E0E0] bg-white px-3 py-2 text-sm text-[#1A1A1A] outline-none focus:border-[#666666]"
                             style={{ minHeight: 200, width: "100%", boxSizing: "border-box" }}

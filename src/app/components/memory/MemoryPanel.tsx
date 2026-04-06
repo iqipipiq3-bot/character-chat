@@ -290,7 +290,7 @@ export function MemoryPanel({ conversationId, characterId, characterName, isOpen
 
   useEffect(() => {
     if (isOpen && conversationId) void fetchMemories();
-  }, [isOpen, conversationId]);
+  }, [isOpen, conversationId, fetchMemories]);
 
   // ── API 액션 ────────────────────────────────────────────────────────────────
   async function handleAdd(type: string, content: string) {

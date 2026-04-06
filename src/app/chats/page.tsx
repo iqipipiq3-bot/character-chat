@@ -47,7 +47,7 @@ export default async function ChatsPage() {
 
   // 캐릭터 이름/썸네일 일괄 조회
   const charIds = [...new Set(list.map((c) => c.character_id))];
-  let charMap: Record<string, { name: string; thumbnail_url: string | null }> = {};
+  const charMap: Record<string, { name: string; thumbnail_url: string | null }> = {};
   if (charIds.length > 0) {
     const { data: chars } = await supabase
       .from("characters")

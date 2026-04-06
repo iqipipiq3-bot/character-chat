@@ -117,11 +117,6 @@ export function DashboardTabsClient({ characters }: DashboardTabsClientProps) {
   const [loreEditContent, setLoreEditContent] = useState("");
   const [loreEditSaving, setLoreEditSaving] = useState(false);
 
-  useEffect(() => {
-    void loadTemplates();
-    void loadLoreTemplates();
-  }, []);
-
   // ── 프롬프트 템플릿 handlers ──
 
   async function loadTemplates() {
@@ -197,6 +192,11 @@ export function DashboardTabsClient({ characters }: DashboardTabsClientProps) {
     }
     setLoreLoading(false);
   }
+
+  useEffect(() => {
+    void loadTemplates();
+    void loadLoreTemplates();
+  }, []);
 
   async function handleLoreAdd() {
     if (!loreAddTitle.trim() || !loreAddContent.trim()) return;

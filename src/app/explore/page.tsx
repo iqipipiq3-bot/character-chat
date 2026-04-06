@@ -59,7 +59,7 @@ export default async function ExplorePage({
 
   // 작성자 닉네임 일괄 조회
   const userIds = [...new Set(list.map((c) => c.user_id))];
-  let authorMap: Record<string, string> = {};
+  const authorMap: Record<string, string> = {};
   if (userIds.length > 0) {
     const { data: profiles } = await supabase
       .from("profiles")

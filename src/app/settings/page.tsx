@@ -27,14 +27,12 @@ const THEME_OPTIONS: { value: Theme; icon: string; label: string; desc: string }
 ];
 
 export default function SettingsPage() {
-  const [theme, setTheme] = useState<Theme>("system");
-
-  useEffect(() => {
-    const saved = localStorage.getItem("theme") as Theme | null;
-    if (saved === "light" || saved === "dark" || saved === "system") {
-      setTheme(saved);
-    }
-  }, []);
+  const [theme, setTheme] = useState<Theme>(() => {
+    if (typeof window === "undefined") return "system";
+    const saved = localStorage.getItem("theme");
+    if (saved === "light" || saved === "dark" || saved === "system") return saved;
+    return "system";
+  });
 
   function handleThemeChange(next: Theme) {
     setTheme(next);

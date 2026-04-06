@@ -379,7 +379,7 @@ export function ChatSidePanel({
                     fontSize: fontSettings.fontSize,
                   }}
                 >
-                  *그가 천천히 고개를 들었다.* "안녕하세요." (미리보기)
+                  *그가 천천히 고개를 들었다.* &quot;안녕하세요.&quot; (미리보기)
                 </div>
               </div>
 
