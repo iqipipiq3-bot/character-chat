@@ -104,7 +104,7 @@ const MODEL_CONFIG: Record<(typeof ALLOWED_MODELS)[number], ModelConfig> = {
     topK: 40,
     presencePenalty: null,
     thinkingBudget: null,
-    thinkingLevel: "low",
+    thinkingLevel: "LOW",
     systemSuffix: `
 Output in Korean.
 No repetition. No summary. Advance the scene forward.
