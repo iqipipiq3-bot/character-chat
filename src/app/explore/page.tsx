@@ -89,9 +89,9 @@ export default async function ExplorePage({
     : enrichedList;
 
   return (
-    <div className="flex h-[calc(100vh-3rem)] flex-col bg-zinc-50 text-zinc-900 dark:bg-black dark:text-zinc-50 md:pl-56">
+    <div className="flex h-[calc(100vh-3.5rem)] md:h-[calc(100vh-3rem)] flex-col bg-zinc-50 text-zinc-900 dark:bg-black dark:text-zinc-50 md:pl-56">
       <main className="flex-1 overflow-y-auto">
-        <div className="mx-auto w-full max-w-4xl px-6 py-10 pb-20">
+        <div className="mx-auto w-full max-w-4xl px-4 py-6 pb-24 md:px-6 md:py-10">
           <header className="mb-2">
             <h1 className="text-2xl font-semibold tracking-tight">공개 캐릭터 둘러보기</h1>
             {query ? (

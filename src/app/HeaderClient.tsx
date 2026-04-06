@@ -23,6 +23,14 @@ export function HeaderClient({ displayName, isLoggedIn, avatarUrl, userId, follo
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   const { checkedInToday: localCheckedIn, freeBalance: localFreeBalance, paidBalance: localPaidBalance } = useHeaderStore();
+  const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
+  const mobileSearchRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (mobileSearchOpen) {
+      mobileSearchRef.current?.focus();
+    }
+  }, [mobileSearchOpen]);
 
   useEffect(() => {
     const supabase = createSupabaseBrowserClient();
@@ -65,7 +73,7 @@ export function HeaderClient({ displayName, isLoggedIn, avatarUrl, userId, follo
         CC
       </Link>
 
-      {/* 헤더 탭 */}
+      {/* 헤더 탭 (데스크탑만) */}
       <nav className="hidden md:flex items-center gap-1 shrink-0">
         {[
           { href: "/explore", label: "공개 캐릭터" },
@@ -85,8 +93,8 @@ export function HeaderClient({ displayName, isLoggedIn, avatarUrl, userId, follo
         ))}
       </nav>
 
-      {/* 검색창 */}
-      <form onSubmit={handleSearchSubmit} className="min-w-0 ml-auto w-full max-w-sm">
+      {/* 검색창 (데스크탑) */}
+      <form onSubmit={handleSearchSubmit} className="hidden md:block min-w-0 ml-auto w-full max-w-sm">
         <div className="relative">
           <svg
             className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-400"
@@ -108,11 +116,109 @@ export function HeaderClient({ displayName, isLoggedIn, avatarUrl, userId, follo
         </div>
       </form>
 
-      {/* 출석 아이콘 (로그인 시만) */}
+      {/* 모바일 검색창 (펼쳐질 때) */}
+      {mobileSearchOpen && (
+        <form onSubmit={(e) => { handleSearchSubmit(e); setMobileSearchOpen(false); }} className="absolute left-0 right-0 top-0 z-10 flex h-14 items-center gap-2 bg-white px-4 dark:bg-zinc-950 md:hidden">
+          <button
+            type="button"
+            onClick={() => setMobileSearchOpen(false)}
+            className="shrink-0 text-zinc-500"
+            aria-label="검색 닫기"
+          >
+            <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" />
+            </svg>
+          </button>
+          <div className="relative flex-1">
+            <svg
+              className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-400"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              strokeWidth={2}
+            >
+              <circle cx="11" cy="11" r="8" />
+              <path strokeLinecap="round" strokeLinejoin="round" d="m21 21-4.35-4.35" />
+            </svg>
+            <input
+              ref={mobileSearchRef}
+              type="search"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="캐릭터, 제작자, 태그 검색..."
+              className="h-9 w-full rounded-lg border border-zinc-200 bg-zinc-50 pl-8 pr-3 text-sm outline-none placeholder:text-zinc-400 focus:border-zinc-400 dark:border-zinc-700 dark:bg-zinc-900 dark:focus:border-zinc-500"
+            />
+          </div>
+          <button
+            type="submit"
+            className="shrink-0 rounded-lg bg-zinc-900 px-3 py-1.5 text-xs font-medium text-white dark:bg-zinc-100 dark:text-zinc-900"
+          >
+            검색
+          </button>
+        </form>
+      )}
+
+      {/* 모바일 오른쪽 아이콘 영역 */}
+      <div className="ml-auto flex items-center gap-1 md:hidden">
+        {/* 검색 아이콘 버튼 */}
+        <button
+          type="button"
+          onClick={() => setMobileSearchOpen(true)}
+          className="flex h-9 w-9 items-center justify-center rounded-lg text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-900"
+          aria-label="검색"
+        >
+          <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+            <circle cx="11" cy="11" r="8" />
+            <path strokeLinecap="round" strokeLinejoin="round" d="m21 21-4.35-4.35" />
+          </svg>
+        </button>
+
+        {/* 출석 아이콘 (로그인 시만, 모바일) */}
+        {isLoggedIn && (
+          <Link
+            href="/attendance"
+            className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-900"
+            aria-label="출석"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="h-5 w-5">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 0 1 2.25-2.25h13.5A2.25 2.25 0 0 1 21 7.5v11.25m-18 0A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75m-18 0v-7.5A2.25 2.25 0 0 1 5.25 9h13.5A2.25 2.25 0 0 1 21 11.25v7.5" />
+            </svg>
+            {!localCheckedIn && (
+              <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-red-500" />
+            )}
+          </Link>
+        )}
+
+        {/* 유저 아이콘 (모바일) → 마이페이지 이동 */}
+        {isLoggedIn ? (
+          <Link
+            href="/mypage"
+            className="flex h-9 w-9 items-center justify-center rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-900"
+          >
+            <div className="flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-full bg-zinc-200 text-[11px] font-semibold uppercase dark:bg-zinc-700">
+              {avatarUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={avatarUrl} alt={displayName ?? ""} className="h-full w-full object-cover" />
+              ) : (
+                displayName?.charAt(0) ?? "?"
+              )}
+            </div>
+          </Link>
+        ) : (
+          <Link
+            href="/login"
+            className="shrink-0 rounded-lg bg-zinc-900 px-3 py-1.5 text-xs font-medium text-white dark:bg-zinc-100 dark:text-zinc-900"
+          >
+            로그인
+          </Link>
+        )}
+      </div>
+
+      {/* 출석 아이콘 (데스크탑) */}
       {isLoggedIn && (
         <Link
           href="/attendance"
-          className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-900"
+          className="relative hidden md:flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-900"
           aria-label="출석"
         >
           <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="h-[18px] w-[18px]">
@@ -124,10 +230,10 @@ export function HeaderClient({ displayName, isLoggedIn, avatarUrl, userId, follo
         </Link>
       )}
 
-      {/* 알림 버튼 */}
+      {/* 알림 버튼 (데스크탑) */}
       <button
         type="button"
-        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-900"
+        className="hidden md:flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-900"
         aria-label="알림"
       >
         <svg
@@ -146,9 +252,9 @@ export function HeaderClient({ displayName, isLoggedIn, avatarUrl, userId, follo
         </svg>
       </button>
 
-      {/* 유저 버튼 */}
+      {/* 유저 버튼 (데스크탑) */}
       {isLoggedIn ? (
-        <div className="relative shrink-0" ref={dropdownRef}>
+        <div className="relative hidden md:block shrink-0" ref={dropdownRef}>
           <button
             type="button"
             onClick={() => setDropdownOpen((v) => !v)}
@@ -310,7 +416,7 @@ export function HeaderClient({ displayName, isLoggedIn, avatarUrl, userId, follo
       ) : (
         <Link
           href="/login"
-          className="shrink-0 rounded-lg bg-zinc-900 px-3 py-1.5 text-xs font-medium text-white dark:bg-zinc-100 dark:text-zinc-900"
+          className="hidden md:inline-flex shrink-0 rounded-lg bg-zinc-900 px-3 py-1.5 text-xs font-medium text-white dark:bg-zinc-100 dark:text-zinc-900"
         >
           로그인
         </Link>

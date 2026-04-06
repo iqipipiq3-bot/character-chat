@@ -44,6 +44,13 @@ type PromptTemplate = {
   content: string;
 };
 
+type LoreTemplate = {
+  id: string;
+  title: string;
+  keywords: string[];
+  content: string;
+};
+
 export type CharacterFormInitialData = {
   name: string;
   description: string;
@@ -162,11 +169,25 @@ export function CharacterFormClient({ mode, characterId, initialData }: Props) {
 
   const MAX_LOREBOOKS = 20;
   const [loreKeywordInputs, setLoreKeywordInputs] = useState<Record<string, string>>({});
-  const [expandedLoreIds, setExpandedLoreIds] = useState<Set<string>>(
-    () => new Set((initialData?.lorebooks ?? []).map((l) => l.id))
-  );
+  const [expandedLoreIds, setExpandedLoreIds] = useState<Set<string>>(() => new Set<string>());
   const loreDragIndex = useRef<number | null>(null);
   const [loreDragOver, setLoreDragOver] = useState<number | null>(null);
+
+  // ── Lorebook Templates ──
+  const [loreTemplates, setLoreTemplates] = useState<LoreTemplate[]>([]);
+  const [loreTemplatesLoading, setLoreTemplatesLoading] = useState(false);
+  const [showLoreTemplateForm, setShowLoreTemplateForm] = useState(false);
+  const [loreTemplateTitle, setLoreTemplateTitle] = useState("");
+  const [loreTemplateKeywordInput, setLoreTemplateKeywordInput] = useState("");
+  const [loreTemplateKeywords, setLoreTemplateKeywords] = useState<string[]>([]);
+  const [loreTemplateContent, setLoreTemplateContent] = useState("");
+  const [loreTemplateSaving, setLoreTemplateSaving] = useState(false);
+  const [loreTemplateEditingId, setLoreTemplateEditingId] = useState<string | null>(null);
+  const [loreTemplateEditTitle, setLoreTemplateEditTitle] = useState("");
+  const [loreTemplateEditKeywordInput, setLoreTemplateEditKeywordInput] = useState("");
+  const [loreTemplateEditKeywords, setLoreTemplateEditKeywords] = useState<string[]>([]);
+  const [loreTemplateEditContent, setLoreTemplateEditContent] = useState("");
+  const [loreTemplateEditSaving, setLoreTemplateEditSaving] = useState(false);
 
   // ── Publish ──
   const [creatorComment, setCreatorComment] = useState(initialData?.creatorComment ?? "");
@@ -292,6 +313,91 @@ export function CharacterFormClient({ mode, characterId, initialData }: Props) {
     setLoreDragOver(null);
   }
 
+  // ── Lorebook Template handlers ──
+
+  async function loadLoreTemplates() {
+    setLoreTemplatesLoading(true);
+    const res = await fetch("/api/lorebook-templates");
+    if (res.ok) {
+      const data = (await res.json()) as { templates: LoreTemplate[] };
+      setLoreTemplates(data.templates);
+    }
+    setLoreTemplatesLoading(false);
+  }
+
+  async function saveLoreTemplate() {
+    if (!loreTemplateTitle.trim() || !loreTemplateContent.trim()) return;
+    setLoreTemplateSaving(true);
+    const res = await fetch("/api/lorebook-templates", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title: loreTemplateTitle, keywords: loreTemplateKeywords, content: loreTemplateContent }),
+    });
+    if (res.ok) {
+      setLoreTemplateTitle("");
+      setLoreTemplateKeywords([]);
+      setLoreTemplateKeywordInput("");
+      setLoreTemplateContent("");
+      setShowLoreTemplateForm(false);
+      await loadLoreTemplates();
+    }
+    setLoreTemplateSaving(false);
+  }
+
+  async function saveLoreTemplateFromEntry(entry: LorebookItem) {
+    const title = entry.title.trim() || entry.keyword[0] || "제목 없음";
+    const res = await fetch("/api/lorebook-templates", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title, keywords: entry.keyword, content: entry.content }),
+    });
+    if (res.ok) {
+      await loadLoreTemplates();
+    } else {
+      const data = (await res.json()) as { error?: string };
+      if (data.error === "max_templates") alert("템플릿은 최대 10개까지 저장할 수 있습니다.");
+    }
+  }
+
+  function applyLoreTemplate(tpl: LoreTemplate) {
+    const newId = crypto.randomUUID();
+    setLorebooks((p) => [
+      ...p,
+      { localId: newId, title: tpl.title, keyword: tpl.keywords, content: tpl.content },
+    ]);
+    setExpandedLoreIds((p) => new Set([...p, newId]));
+  }
+
+  async function deleteLoreTemplate(id: string) {
+    const ok = window.confirm("템플릿을 삭제하시겠습니까?");
+    if (!ok) return;
+    await fetch(`/api/lorebook-templates/${id}`, { method: "DELETE" });
+    setLoreTemplates((prev) => prev.filter((t) => t.id !== id));
+  }
+
+  function startLoreTemplateEdit(tpl: LoreTemplate) {
+    setLoreTemplateEditingId(tpl.id);
+    setLoreTemplateEditTitle(tpl.title);
+    setLoreTemplateEditKeywords(tpl.keywords);
+    setLoreTemplateEditKeywordInput("");
+    setLoreTemplateEditContent(tpl.content);
+  }
+
+  async function saveLoreTemplateEdit() {
+    if (!loreTemplateEditingId || !loreTemplateEditTitle.trim() || !loreTemplateEditContent.trim()) return;
+    setLoreTemplateEditSaving(true);
+    const res = await fetch(`/api/lorebook-templates/${loreTemplateEditingId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title: loreTemplateEditTitle, keywords: loreTemplateEditKeywords, content: loreTemplateEditContent }),
+    });
+    if (res.ok) {
+      setLoreTemplateEditingId(null);
+      await loadLoreTemplates();
+    }
+    setLoreTemplateEditSaving(false);
+  }
+
   // ── Template handlers ──
 
   async function loadTemplates() {
@@ -304,7 +410,8 @@ export function CharacterFormClient({ mode, characterId, initialData }: Props) {
   }
 
   useEffect(() => {
-    if (activeTab === "settings") loadTemplates();
+    if (activeTab === "settings") void loadTemplates();
+    if (activeTab === "lorebook") void loadLoreTemplates();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab]);
 
@@ -645,7 +752,7 @@ export function CharacterFormClient({ mode, characterId, initialData }: Props) {
         </div>
 
         {/* Tab content — 프로필/시나리오는 좌우 분할, 나머지는 단일 컬럼 */}
-        <div className={`mt-6 ${activeTab === "profile" || activeTab === "scenarios" || activeTab === "settings" ? "grid grid-cols-1 gap-8 md:grid-cols-2 md:items-start" : activeTab === "assets" || activeTab === "lorebook" || activeTab === "publish" ? "w-full space-y-6" : "max-w-2xl space-y-6"}`}>
+        <div className={`mt-6 ${activeTab === "profile" || activeTab === "scenarios" || activeTab === "settings" || activeTab === "lorebook" ? "grid grid-cols-1 gap-8 md:grid-cols-2 md:items-start" : activeTab === "assets" || activeTab === "publish" ? "w-full space-y-6" : "max-w-2xl space-y-6"}`}>
 
           {/* ── 탭1: 프로필 ── */}
           {activeTab === "profile" && (
@@ -1345,195 +1452,439 @@ export function CharacterFormClient({ mode, characterId, initialData }: Props) {
           {/* ── 탭5: 로어북 ── */}
           {activeTab === "lorebook" && (
             <>
-              <div className="flex items-start justify-between gap-4">
-                <div>
-                  <label className={LABEL}>로어북 (선택)</label>
-                  <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-                    키워드가 대화에 등장할 때 해당 내용이 시스템 프롬프트에 자동 삽입됩니다.
-                    한 턴에 최대 5개 발동 (위쪽 항목 우선). 드래그로 순서 변경.
-                  </p>
+              {/* 왼쪽: 로어북 목록 */}
+              <div className="space-y-4">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <label className={LABEL}>로어북 (선택)</label>
+                    <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+                      키워드가 대화에 등장할 때 해당 내용이 시스템 프롬프트에 자동 삽입됩니다.
+                      한 턴에 최대 5개 발동 (위쪽 항목 우선). 드래그로 순서 변경.
+                    </p>
+                  </div>
+                  <span className="shrink-0 rounded-full bg-zinc-100 px-2 py-0.5 text-xs text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400">
+                    {lorebooks.length}/{MAX_LOREBOOKS}
+                  </span>
                 </div>
-                <span className="shrink-0 rounded-full bg-zinc-100 px-2 py-0.5 text-xs text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400">
-                  {lorebooks.length}/{MAX_LOREBOOKS}
-                </span>
+
+                {lorebooks.length > 0 && (
+                  <div className="space-y-2">
+                    {lorebooks.map((entry, i) => {
+                      const isExpanded = expandedLoreIds.has(entry.localId);
+                      const isDragTarget = loreDragOver === i;
+                      return (
+                        <div
+                          key={entry.localId}
+                          onDragOver={(e) => handleLoreDragOver(e, i)}
+                          onDrop={() => handleLoreDrop(i)}
+                          className={`rounded-xl border bg-white transition-colors dark:bg-zinc-900 ${
+                            isDragTarget
+                              ? "border-zinc-500 dark:border-zinc-400"
+                              : "border-zinc-200 dark:border-zinc-800"
+                          }`}
+                        >
+                          {/* 헤더 행 */}
+                          <div className="flex items-center gap-1 px-3 py-2.5">
+                            {/* 드래그 핸들 */}
+                            <span
+                              draggable
+                              onDragStart={() => handleLoreDragStart(i)}
+                              onDragEnd={handleLoreDragEnd}
+                              className="mr-1 shrink-0 cursor-grab text-zinc-300 active:cursor-grabbing dark:text-zinc-600"
+                            >
+                              <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor">
+                                <circle cx="4.5" cy="3.5" r="1.2" />
+                                <circle cx="4.5" cy="7" r="1.2" />
+                                <circle cx="4.5" cy="10.5" r="1.2" />
+                                <circle cx="9.5" cy="3.5" r="1.2" />
+                                <circle cx="9.5" cy="7" r="1.2" />
+                                <circle cx="9.5" cy="10.5" r="1.2" />
+                              </svg>
+                            </span>
+
+                            {/* 우선순위 번호 */}
+                            <span className="w-6 shrink-0 text-center text-[11px] font-semibold text-zinc-400">
+                              {i + 1}
+                            </span>
+
+                            {/* 제목/키워드 미리보기 — 클릭 시 토글 */}
+                            <button
+                              type="button"
+                              onClick={() => toggleLoreExpand(entry.localId)}
+                              className="flex flex-1 flex-wrap items-center gap-1.5 overflow-hidden text-left"
+                            >
+                              <span className="text-xs font-medium text-zinc-700 dark:text-zinc-300">
+                                {entry.title.trim() || entry.keyword[0] || "제목 없음"}
+                              </span>
+                              {!isExpanded && entry.keyword.length > 0 && (
+                                <div className="ml-auto flex flex-wrap justify-end gap-1.5">
+                                  {entry.keyword.map((kw, idx) => (
+                                    <span
+                                      key={idx}
+                                      className="rounded bg-zinc-100 px-1.5 py-0.5 text-[11px] text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400"
+                                    >
+                                      {kw}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+                              <svg
+                                width="12"
+                                height="12"
+                                viewBox="0 0 12 12"
+                                fill="none"
+                                className={`shrink-0 text-zinc-400 transition-transform ${isExpanded ? "rotate-180" : ""}`}
+                              >
+                                <path d="M2 4l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                              </svg>
+                            </button>
+
+                            {/* 템플릿으로 저장 */}
+                            <button
+                              type="button"
+                              onClick={() => void saveLoreTemplateFromEntry(entry)}
+                              title="템플릿으로 저장"
+                              className="ml-1 shrink-0 text-xs text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300"
+                            >
+                              저장
+                            </button>
+
+                            {/* 삭제 */}
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setLorebooks((p) => p.filter((l) => l.localId !== entry.localId))
+                              }
+                              className="ml-1 shrink-0 text-xs text-red-500 hover:text-red-600"
+                            >
+                              삭제
+                            </button>
+                          </div>
+
+                          {/* 펼쳐진 내용 */}
+                          {isExpanded && (
+                            <div
+                              className="space-y-3 border-t border-zinc-100 px-4 pb-4 pt-3 dark:border-zinc-800"
+                              onMouseDown={(e) => e.stopPropagation()}
+                              onPointerDown={(e) => e.stopPropagation()}
+                            >
+                              <div>
+                                <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                                  제목
+                                </label>
+                                <input
+                                  type="text"
+                                  value={entry.title}
+                                  onChange={(e) => updateLorebook(entry.localId, "title", e.target.value)}
+                                  placeholder="예: 마법의 탑 설명"
+                                  className={`mt-1 ${INPUT}`}
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                                  키워드 (최대 5개)
+                                </label>
+                                <div className="mt-1 flex flex-wrap gap-1.5">
+                                  {entry.keyword.map((kw, idx) => (
+                                    <span
+                                      key={idx}
+                                      className="flex items-center gap-1 rounded-md bg-zinc-100 px-2 py-1 text-xs text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"
+                                    >
+                                      {kw}
+                                      <button
+                                        type="button"
+                                        onClick={() => removeLorebookKeyword(entry.localId, idx)}
+                                        className="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200"
+                                      >
+                                        ×
+                                      </button>
+                                    </span>
+                                  ))}
+                                  {entry.keyword.length < 5 && (
+                                    <input
+                                      type="text"
+                                      value={loreKeywordInputs[entry.localId] ?? ""}
+                                      onChange={(e) =>
+                                        setLoreKeywordInputs((prev) => ({ ...prev, [entry.localId]: e.target.value }))
+                                      }
+                                      onKeyDown={(e) => {
+                                        if (e.key === "Enter") {
+                                          e.preventDefault();
+                                          const kw = (loreKeywordInputs[entry.localId] ?? "").trim();
+                                          if (kw) addLorebookKeyword(entry.localId, kw);
+                                        }
+                                      }}
+                                      placeholder="입력 후 Enter"
+                                      className={`min-w-[120px] flex-1 ${INPUT}`}
+                                    />
+                                  )}
+                                </div>
+                              </div>
+                              <div>
+                                <div className="flex items-baseline justify-between">
+                                  <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                                    내용
+                                  </label>
+                                  <span className="text-[11px] text-zinc-400">
+                                    {entry.content.length}/400
+                                  </span>
+                                </div>
+                                <textarea
+                                  value={entry.content}
+                                  onChange={(e) => updateLorebook(entry.localId, "content", cap(e.target.value, 400))}
+                                  placeholder="예: 마법의 탑은 왕국 북쪽 끝에 위치한 고대 마법사의 거처로, 수백 년 된 마법 서적들이 보관되어 있다."
+                                  className={`mt-1 min-h-48 resize-y ${INPUT}`}
+                                />
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {lorebooks.length < MAX_LOREBOOKS ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const newId = crypto.randomUUID();
+                      setLorebooks((p) => [
+                        ...p,
+                        { localId: newId, title: "", keyword: [], content: "" },
+                      ]);
+                      setExpandedLoreIds((p) => new Set([...p, newId]));
+                    }}
+                    className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-dashed border-zinc-300 py-3 text-sm text-zinc-500 hover:border-zinc-400 hover:text-zinc-700 dark:border-zinc-700 dark:hover:border-zinc-500 dark:hover:text-zinc-300"
+                  >
+                    + 항목 추가
+                  </button>
+                ) : (
+                  <p className="text-center text-xs text-zinc-400">최대 {MAX_LOREBOOKS}개까지 추가할 수 있습니다.</p>
+                )}
               </div>
 
-              {lorebooks.length > 0 && (
-                <div className="space-y-2">
-                  {lorebooks.map((entry, i) => {
-                    const isExpanded = expandedLoreIds.has(entry.localId);
-                    const isDragTarget = loreDragOver === i;
-                    return (
-                      <div
-                        key={entry.localId}
-                        draggable
-                        onDragStart={() => handleLoreDragStart(i)}
-                        onDragOver={(e) => handleLoreDragOver(e, i)}
-                        onDrop={() => handleLoreDrop(i)}
-                        onDragEnd={handleLoreDragEnd}
-                        className={`rounded-xl border bg-white transition-colors dark:bg-zinc-900 ${
-                          isDragTarget
-                            ? "border-zinc-500 dark:border-zinc-400"
-                            : "border-zinc-200 dark:border-zinc-800"
-                        }`}
-                      >
-                        {/* 헤더 행 */}
-                        <div className="flex items-center gap-1 px-3 py-2.5">
-                          {/* 드래그 핸들 */}
-                          <span
-                            className="mr-1 shrink-0 cursor-grab text-zinc-300 active:cursor-grabbing dark:text-zinc-600"
-                            onMouseDown={(e) => e.stopPropagation()}
-                          >
-                            <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor">
-                              <circle cx="4.5" cy="3.5" r="1.2" />
-                              <circle cx="4.5" cy="7" r="1.2" />
-                              <circle cx="4.5" cy="10.5" r="1.2" />
-                              <circle cx="9.5" cy="3.5" r="1.2" />
-                              <circle cx="9.5" cy="7" r="1.2" />
-                              <circle cx="9.5" cy="10.5" r="1.2" />
-                            </svg>
-                          </span>
+              {/* 오른쪽: 로어북 템플릿 */}
+              <div className="space-y-4">
+                <header>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-baseline gap-2">
+                      <h3 className="text-sm font-semibold">내 템플릿</h3>
+                      {!loreTemplatesLoading && (
+                        <span className="text-xs text-zinc-400 dark:text-zinc-500">{loreTemplates.length}/10</span>
+                      )}
+                    </div>
+                    {!showLoreTemplateForm && (
+                      loreTemplates.length >= 10 ? (
+                        <span className="rounded-lg border border-zinc-200 px-3 py-1.5 text-xs text-zinc-400 dark:border-zinc-700 dark:text-zinc-600">
+                          최대 10개
+                        </span>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => setShowLoreTemplateForm(true)}
+                          className="rounded-lg border border-zinc-200 px-3 py-1.5 text-xs font-medium text-zinc-600 hover:border-zinc-400 hover:text-zinc-900 dark:border-zinc-700 dark:text-zinc-400 dark:hover:border-zinc-500 dark:hover:text-zinc-100"
+                        >
+                          + 새 템플릿 만들기
+                        </button>
+                      )
+                    )}
+                  </div>
+                  <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+                    자주 쓰는 로어북 항목을 템플릿으로 저장해두고 클릭 한 번으로 불러오세요.
+                  </p>
+                </header>
 
-                          {/* 우선순위 번호 */}
-                          <span className="w-6 shrink-0 text-center text-[11px] font-semibold text-zinc-400">
-                            {i + 1}
-                          </span>
-
-                          {/* 제목/키워드 (접혔을 때 미리보기) — 클릭 시 토글 */}
-                          <button
-                            type="button"
-                            onClick={() => toggleLoreExpand(entry.localId)}
-                            className="flex flex-1 items-center gap-2 overflow-hidden text-left"
-                          >
-                            <span className="flex-1 truncate text-xs font-medium text-zinc-700 dark:text-zinc-300">
-                              {entry.title.trim() || entry.keyword[0] || "제목 없음"}
-                            </span>
-                            {!isExpanded && entry.keyword.length > 0 ? (
-                              <span className="shrink-0 rounded bg-zinc-100 px-1.5 py-0.5 text-[11px] text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400">
-                                {entry.keyword[0]}{entry.keyword.length > 1 ? ` +${entry.keyword.length - 1}` : ""}
-                              </span>
-                            ) : null}
-                            <svg
-                              width="12"
-                              height="12"
-                              viewBox="0 0 12 12"
-                              fill="none"
-                              className={`shrink-0 text-zinc-400 transition-transform ${isExpanded ? "rotate-180" : ""}`}
-                            >
-                              <path d="M2 4l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                            </svg>
-                          </button>
-
-                          {/* 삭제 */}
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setLorebooks((p) => p.filter((l) => l.localId !== entry.localId))
+                {/* 새 템플릿 추가 폼 */}
+                {showLoreTemplateForm && (
+                  <div className="rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
+                    <input
+                      type="text"
+                      value={loreTemplateTitle}
+                      onChange={(e) => setLoreTemplateTitle(e.target.value)}
+                      placeholder="템플릿 이름"
+                      maxLength={50}
+                      autoFocus
+                      className={`mb-2 ${INPUT}`}
+                    />
+                    {/* 키워드 */}
+                    <div className="mb-2 flex flex-wrap gap-1.5">
+                      {loreTemplateKeywords.map((kw, idx) => (
+                        <span key={idx} className="flex items-center gap-1 rounded-md bg-zinc-100 px-2 py-1 text-xs text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300">
+                          {kw}
+                          <button type="button" onClick={() => setLoreTemplateKeywords((p) => p.filter((_, i) => i !== idx))} className="text-zinc-400 hover:text-zinc-600">×</button>
+                        </span>
+                      ))}
+                      {loreTemplateKeywords.length < 5 && (
+                        <input
+                          type="text"
+                          value={loreTemplateKeywordInput}
+                          onChange={(e) => setLoreTemplateKeywordInput(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                              e.preventDefault();
+                              const kw = loreTemplateKeywordInput.trim();
+                              if (kw && !loreTemplateKeywords.includes(kw)) {
+                                setLoreTemplateKeywords((p) => [...p, kw]);
+                                setLoreTemplateKeywordInput("");
+                              }
                             }
-                            className="ml-1 shrink-0 text-xs text-red-500 hover:text-red-600"
-                          >
-                            삭제
-                          </button>
-                        </div>
+                          }}
+                          placeholder="키워드 입력 후 Enter"
+                          className={`min-w-[120px] flex-1 ${INPUT}`}
+                        />
+                      )}
+                    </div>
+                    <textarea
+                      rows={4}
+                      value={loreTemplateContent}
+                      onChange={(e) => setLoreTemplateContent(e.target.value)}
+                      placeholder="템플릿 내용을 입력하세요..."
+                      maxLength={400}
+                      className={`mb-1 resize-none ${INPUT}`}
+                    />
+                    <p className="mb-2 text-right text-[10px] text-zinc-400">{loreTemplateContent.length} / 400</p>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => { setShowLoreTemplateForm(false); setLoreTemplateTitle(""); setLoreTemplateKeywords([]); setLoreTemplateKeywordInput(""); setLoreTemplateContent(""); }}
+                        className="flex-1 rounded-lg border border-zinc-200 py-2 text-xs text-zinc-500 hover:border-zinc-400 dark:border-zinc-700"
+                      >
+                        취소
+                      </button>
+                      <button
+                        type="button"
+                        disabled={!loreTemplateTitle.trim() || !loreTemplateContent.trim() || loreTemplateSaving}
+                        onClick={() => void saveLoreTemplate()}
+                        className="flex-1 rounded-lg bg-zinc-900 py-2 text-xs text-white disabled:opacity-40 hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
+                      >
+                        저장
+                      </button>
+                    </div>
+                  </div>
+                )}
 
-                        {/* 펼쳐진 내용 */}
-                        {isExpanded && (
-                          <div className="space-y-3 border-t border-zinc-100 px-4 pb-4 pt-3 dark:border-zinc-800">
-                            <div>
-                              <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400">
-                                제목
-                              </label>
+                {/* 템플릿 목록 */}
+                {loreTemplatesLoading ? (
+                  <div className="space-y-3">
+                    {[1, 2].map((i) => (
+                      <div key={i} className="h-20 animate-pulse rounded-xl bg-zinc-200 dark:bg-zinc-800" />
+                    ))}
+                  </div>
+                ) : loreTemplates.length === 0 ? (
+                  <p className="py-10 text-center text-sm text-zinc-400 dark:text-zinc-600">
+                    저장된 템플릿이 없습니다
+                  </p>
+                ) : (
+                  <div className="space-y-3">
+                    {loreTemplates.map((tpl) =>
+                      loreTemplateEditingId === tpl.id ? (
+                        /* 수정 폼 */
+                        <div key={tpl.id} className="rounded-xl border border-zinc-300 bg-white p-4 dark:border-zinc-700 dark:bg-zinc-900">
+                          <input
+                            type="text"
+                            value={loreTemplateEditTitle}
+                            onChange={(e) => setLoreTemplateEditTitle(e.target.value)}
+                            maxLength={50}
+                            autoFocus
+                            className={`mb-2 ${INPUT}`}
+                          />
+                          {/* 키워드 수정 */}
+                          <div className="mb-2 flex flex-wrap gap-1.5">
+                            {loreTemplateEditKeywords.map((kw, idx) => (
+                              <span key={idx} className="flex items-center gap-1 rounded-md bg-zinc-100 px-2 py-1 text-xs text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300">
+                                {kw}
+                                <button type="button" onClick={() => setLoreTemplateEditKeywords((p) => p.filter((_, i) => i !== idx))} className="text-zinc-400 hover:text-zinc-600">×</button>
+                              </span>
+                            ))}
+                            {loreTemplateEditKeywords.length < 5 && (
                               <input
                                 type="text"
-                                value={entry.title}
-                                onChange={(e) => updateLorebook(entry.localId, "title", e.target.value)}
-                                placeholder="예: 마법의 탑 설명"
-                                className={`mt-1 ${INPUT}`}
-                              />
-                            </div>
-                            <div>
-                              <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400">
-                                키워드 (최대 5개)
-                              </label>
-                              <div className="mt-1 flex flex-wrap gap-1.5">
-                                {entry.keyword.map((kw, idx) => (
-                                  <span
-                                    key={idx}
-                                    className="flex items-center gap-1 rounded-md bg-zinc-100 px-2 py-1 text-xs text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"
-                                  >
-                                    {kw}
-                                    <button
-                                      type="button"
-                                      onClick={() => removeLorebookKeyword(entry.localId, idx)}
-                                      className="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200"
-                                    >
-                                      ×
-                                    </button>
-                                  </span>
-                                ))}
-                                {entry.keyword.length < 5 && (
-                                  <input
-                                    type="text"
-                                    value={loreKeywordInputs[entry.localId] ?? ""}
-                                    onChange={(e) =>
-                                      setLoreKeywordInputs((prev) => ({ ...prev, [entry.localId]: e.target.value }))
+                                value={loreTemplateEditKeywordInput}
+                                onChange={(e) => setLoreTemplateEditKeywordInput(e.target.value)}
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter") {
+                                    e.preventDefault();
+                                    const kw = loreTemplateEditKeywordInput.trim();
+                                    if (kw && !loreTemplateEditKeywords.includes(kw)) {
+                                      setLoreTemplateEditKeywords((p) => [...p, kw]);
+                                      setLoreTemplateEditKeywordInput("");
                                     }
-                                    onKeyDown={(e) => {
-                                      if (e.key === "Enter") {
-                                        e.preventDefault();
-                                        const kw = (loreKeywordInputs[entry.localId] ?? "").trim();
-                                        if (kw) addLorebookKeyword(entry.localId, kw);
-                                      }
-                                    }}
-                                    placeholder="입력 후 Enter"
-                                    className={`min-w-[120px] flex-1 ${INPUT}`}
-                                  />
-                                )}
-                              </div>
-                            </div>
-                            <div>
-                              <div className="flex items-baseline justify-between">
-                                <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400">
-                                  내용
-                                </label>
-                                <span className="text-[11px] text-zinc-400">
-                                  {entry.content.length}/400
-                                </span>
-                              </div>
-                              <textarea
-                                rows={3}
-                                value={entry.content}
-                                onChange={(e) => updateLorebook(entry.localId, "content", cap(e.target.value, 400))}
-                                placeholder="예: 마법의 탑은 왕국 북쪽 끝에 위치한 고대 마법사의 거처로, 수백 년 된 마법 서적들이 보관되어 있다."
-                                className={`mt-1 resize-none ${INPUT}`}
+                                  }
+                                }}
+                                placeholder="키워드 입력 후 Enter"
+                                className={`min-w-[120px] flex-1 ${INPUT}`}
                               />
-                            </div>
+                            )}
                           </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-
-              {lorebooks.length < MAX_LOREBOOKS ? (
-                <button
-                  type="button"
-                  onClick={() => {
-                    const newId = crypto.randomUUID();
-                    setLorebooks((p) => [
-                      ...p,
-                      { localId: newId, title: "", keyword: [], content: "" },
-                    ]);
-                    setExpandedLoreIds((p) => new Set([...p, newId]));
-                  }}
-                  className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-dashed border-zinc-300 py-3 text-sm text-zinc-500 hover:border-zinc-400 hover:text-zinc-700 dark:border-zinc-700 dark:hover:border-zinc-500 dark:hover:text-zinc-300"
-                >
-                  + 항목 추가
-                </button>
-              ) : (
-                <p className="text-center text-xs text-zinc-400">최대 {MAX_LOREBOOKS}개까지 추가할 수 있습니다.</p>
-              )}
+                          <textarea
+                            value={loreTemplateEditContent}
+                            onChange={(e) => setLoreTemplateEditContent(e.target.value)}
+                            maxLength={400}
+                            className={`mb-1 min-h-[200px] resize-y ${INPUT}`}
+                          />
+                          <p className="mb-2 text-right text-[10px] text-zinc-400">{loreTemplateEditContent.length} / 400</p>
+                          <div className="flex gap-2">
+                            <button
+                              type="button"
+                              onClick={() => { setLoreTemplateEditingId(null); }}
+                              className="flex-1 rounded-lg border border-zinc-200 py-2 text-xs text-zinc-500 hover:border-zinc-400 dark:border-zinc-700"
+                            >
+                              취소
+                            </button>
+                            <button
+                              type="button"
+                              disabled={!loreTemplateEditTitle.trim() || !loreTemplateEditContent.trim() || loreTemplateEditSaving}
+                              onClick={() => void saveLoreTemplateEdit()}
+                              className="flex-1 rounded-lg bg-zinc-900 py-2 text-xs text-white disabled:opacity-40 hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
+                            >
+                              저장
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        /* 카드 */
+                        <div key={tpl.id} className="rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-950">
+                          <p className="truncate text-sm font-semibold text-zinc-800 dark:text-zinc-100">{tpl.title}</p>
+                          {tpl.keywords.length > 0 && (
+                            <div className="mt-1 flex flex-wrap gap-1">
+                              {tpl.keywords.map((kw, idx) => (
+                                <span key={idx} className="rounded bg-zinc-100 px-1.5 py-0.5 text-[10px] text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400">{kw}</span>
+                              ))}
+                            </div>
+                          )}
+                          <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400 line-clamp-2">
+                            {tpl.content.slice(0, 80)}{tpl.content.length > 80 ? "…" : ""}
+                          </p>
+                          <div className="mt-3 flex gap-2">
+                            <button
+                              type="button"
+                              onClick={() => applyLoreTemplate(tpl)}
+                              className="flex-1 rounded-md border border-zinc-200 py-1.5 text-xs text-zinc-600 hover:border-zinc-400 dark:border-zinc-700 dark:text-zinc-400 dark:hover:border-zinc-500"
+                            >
+                              불러오기
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => startLoreTemplateEdit(tpl)}
+                              className="flex-1 rounded-md border border-zinc-200 py-1.5 text-xs text-zinc-600 hover:border-zinc-400 dark:border-zinc-700 dark:text-zinc-400 dark:hover:border-zinc-500"
+                            >
+                              수정
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => void deleteLoreTemplate(tpl.id)}
+                              className="flex-1 rounded-md border border-red-200 py-1.5 text-xs text-red-500 hover:border-red-400 dark:border-red-900 dark:hover:border-red-700"
+                            >
+                              삭제
+                            </button>
+                          </div>
+                        </div>
+                      )
+                    )}
+                  </div>
+                )}
+              </div>
             </>
           )}
 

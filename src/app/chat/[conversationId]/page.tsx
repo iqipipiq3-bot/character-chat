@@ -786,49 +786,61 @@ export default function ChatPage() {
 
   return (
     <div className="min-h-screen bg-[#F8F8F8] text-[#1A1A1A]">
-      <main className="mx-auto flex w-full max-w-7xl flex-col px-4">
+      <main className="mx-auto flex w-full max-w-7xl flex-col px-3 md:px-4">
         {/* ── 헤더 ── */}
-        <div className="sticky top-12 z-40 mb-4 flex items-center justify-between gap-2 bg-[#F8F8F8] py-4">
-          {/* 좌: 대시보드로 */}
+        <div className="sticky top-14 md:top-12 z-40 mb-2 md:mb-4 flex items-center justify-between gap-2 bg-[#F8F8F8] py-2 md:py-4">
+          {/* 좌: 뒤로가기 */}
           <button
             type="button"
             onClick={() => router.push("/dashboard")}
-            className="shrink-0 text-sm font-medium text-[#666666] hover:text-[#1A1A1A]"
+            className="flex shrink-0 min-h-[44px] items-center gap-1 text-sm font-medium text-[#666666] hover:text-[#1A1A1A]"
           >
-            ← 대시보드로
+            <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" />
+            </svg>
+            <span className="hidden md:inline">대시보드로</span>
           </button>
 
-          {/* 가운데: 캐릭터 이름 */}
-          {characterId && characterName ? (
-            <Link
-              href={`/explore/${characterId}`}
-              className="truncate text-base font-semibold text-[#1A1A1A] hover:underline"
-            >
-              {characterName}
-            </Link>
-          ) : (
-            <span className="text-base font-semibold text-[#1A1A1A]">대화</span>
-          )}
+          {/* 가운데: 캐릭터 썸네일 + 이름 */}
+          <div className="flex min-w-0 flex-1 items-center justify-center gap-2">
+            {characterThumbnail && (
+              <img
+                src={characterThumbnail}
+                alt={characterName ?? ""}
+                className="h-7 w-7 shrink-0 rounded-full object-cover"
+              />
+            )}
+            {characterId && characterName ? (
+              <Link
+                href={`/explore/${characterId}`}
+                className="truncate text-sm font-semibold text-[#1A1A1A] hover:underline md:text-base"
+              >
+                {characterName}
+              </Link>
+            ) : (
+              <span className="text-sm font-semibold text-[#1A1A1A] md:text-base">대화</span>
+            )}
+          </div>
 
           {/* 우: 모델 선택 + 설정 버튼 */}
-          <div className="flex shrink-0 items-center gap-2">
+          <div className="flex shrink-0 items-center gap-1.5">
             {/* 모델 드롭다운 */}
             <div className="relative" ref={modelMenuRef}>
               <button
                 type="button"
                 onClick={() => setModelMenuOpen((v) => !v)}
-                className="flex h-8 items-center gap-1.5 rounded-lg border border-[#E0E0E0] bg-white pl-2.5 pr-2 text-xs font-medium text-[#444444] hover:bg-[#F0F0F0]"
+                className="flex h-8 items-center gap-1.5 rounded-lg border border-[#E0E0E0] bg-white px-2 text-xs font-medium text-[#444444] hover:bg-[#F0F0F0]"
               >
                 <svg
-                  width="11"
-                  height="11"
+                  width="16"
+                  height="16"
                   viewBox="0 0 24 24"
                   fill={CHAT_MODELS.find((m) => m.value === selectedModel)?.heartColor ?? "#FF0000"}
                 >
                   <path d="M12 21.593c-.525-.507-5.453-5.017-7.005-6.938C2.464 11.977 2 10.025 2 8.196 2 4.771 4.812 2 8.286 2c1.773 0 3.416.808 4.714 2.136C14.298 2.808 15.941 2 17.714 2 21.188 2 24 4.771 24 8.196c0 1.83-.464 3.78-2.995 6.459-1.552 1.921-6.48 6.431-7.005 6.938l-1 .948-1-.948z" />
                 </svg>
-                <span>{CHAT_MODELS.find((m) => m.value === selectedModel)?.label ?? "모델 선택"}</span>
-                <svg className="h-3 w-3 text-[#999999]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                <span className="hidden sm:inline">{CHAT_MODELS.find((m) => m.value === selectedModel)?.label ?? "모델"}</span>
+                <svg className="h-4 w-4 text-[#999999]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
                 </svg>
               </button>
@@ -839,7 +851,7 @@ export default function ChatPage() {
                       key={m.value}
                       type="button"
                       onClick={() => void handleModelChange(m.value)}
-                      className={`flex w-full items-center gap-2 px-3 py-2 text-xs hover:bg-[#F8F8F8] ${
+                      className={`flex w-full items-center gap-2 px-3 py-2.5 text-xs hover:bg-[#F8F8F8] ${
                         selectedModel === m.value ? "font-semibold text-[#1A1A1A]" : "text-[#555555]"
                       }`}
                     >
@@ -874,14 +886,16 @@ export default function ChatPage() {
             <button
               type="button"
               onClick={() => setSidePanelOpen((v) => !v)}
-              className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#E0E0E0] bg-white text-sm text-[#666666] hover:bg-[#F0F0F0]"
+              className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#E0E0E0] bg-white text-[#666666] hover:bg-[#F0F0F0]"
             >
-              ···
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="h-4 w-4">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 12a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0ZM12.75 12a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0ZM18.75 12a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0Z" />
+              </svg>
             </button>
           </div>
         </div>
 
-        <div className="space-y-4 pb-52">
+        <div className="space-y-4 pb-36 md:pb-52">
           {messages.length === 0 ? (
             <p className="text-sm text-[#666666]">
               아직 메시지가 없습니다. 아래 입력창에 첫 메시지를 보내 보세요.
@@ -895,8 +909,8 @@ export default function ChatPage() {
                     editId === m.id
                       ? "w-full"
                       : m.role === "user"
-                        ? "max-w-[85%]"
-                        : "max-w-[95%]"
+                        ? "max-w-[88%] md:max-w-[85%]"
+                        : "max-w-[96%] md:max-w-[95%]"
                   } ${m.role === "user" ? "ml-auto" : "mr-auto"} ${openMenuId === m.id ? "z-20" : "z-0"}`}
                   style={{ isolation: "isolate" }}
                 >
@@ -1039,12 +1053,24 @@ export default function ChatPage() {
           </div>
         ) : null}
 
-        <form onSubmit={handleSend} className="fixed bottom-0 left-0 right-0 z-40 border-t border-[#E8E8E8] bg-[#F8F8F8] px-4 py-3">
+        <form
+          onSubmit={handleSend}
+          className="fixed bottom-0 left-0 right-0 z-40 border-t border-[#E8E8E8] bg-[#F8F8F8] px-3 pt-2 pb-2 md:px-4 md:pt-3 md:pb-3"
+          style={{ paddingBottom: "max(0.5rem, env(safe-area-inset-bottom))" }}
+        >
           <div className="mx-auto flex w-full max-w-7xl gap-2">
           <textarea
             rows={2}
             value={input}
             onChange={(e) => setInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+                e.preventDefault();
+                if (input.trim() && !loading) {
+                  e.currentTarget.form?.requestSubmit();
+                }
+              }
+            }}
             disabled={loading}
             className="flex-1 resize-none rounded-lg border border-[#E0E0E0] bg-white px-3 py-2 text-sm outline-none focus:border-[#666666] disabled:opacity-60"
             placeholder="메시지를 입력하세요..."
@@ -1053,7 +1079,7 @@ export default function ChatPage() {
             <button
               type="button"
               onClick={() => void handleStop()}
-              className="h-[42px] self-end rounded-lg bg-red-500 px-4 text-sm font-medium text-white hover:bg-red-600"
+              className="h-[44px] self-end rounded-lg bg-red-500 px-4 text-sm font-medium text-white hover:bg-red-600"
             >
               중지
             </button>
@@ -1061,7 +1087,7 @@ export default function ChatPage() {
             <button
               type="submit"
               disabled={!input.trim()}
-              className="h-[42px] self-end rounded-lg bg-[#1A1A2E] px-4 text-sm font-medium text-white disabled:opacity-60"
+              className="h-[44px] self-end rounded-lg bg-[#1A1A2E] px-4 text-sm font-medium text-white disabled:opacity-60"
             >
               전송
             </button>

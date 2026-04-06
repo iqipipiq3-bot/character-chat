@@ -20,7 +20,7 @@ export function HeaderShell({ displayName, isLoggedIn, avatarUrl, userId, follow
   if (isAuthPage) return null;
 
   return (
-    <header className="fixed left-0 right-0 top-0 z-50 h-12 border-b border-zinc-200 bg-white/80 backdrop-blur dark:border-zinc-800 dark:bg-black/70">
+    <header className="fixed left-0 right-0 top-0 z-50 h-14 md:h-12 border-b border-zinc-200 bg-white/80 backdrop-blur dark:border-zinc-800 dark:bg-black/70">
       <HeaderClient
         displayName={displayName}
         isLoggedIn={isLoggedIn}
@@ -38,7 +38,7 @@ export function HeaderPadding({ children }: { children: React.ReactNode }) {
   const isAuthPage = pathname === "/login" || pathname === "/signup";
 
   return (
-    <div className={isAuthPage ? "" : "pt-12"}>
+    <div className={isAuthPage ? "" : "pt-14 md:pt-12"}>
       {children}
     </div>
   );

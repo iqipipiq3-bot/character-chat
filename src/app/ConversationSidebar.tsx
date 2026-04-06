@@ -530,19 +530,7 @@ export function ConversationSidebar() {
         <div className="fixed inset-0 z-30 bg-black/40 md:hidden" onClick={() => setDrawerOpen(false)} />
       )}
 
-      {/* 모바일 열기 버튼 */}
-      <button
-        type="button"
-        onClick={() => setDrawerOpen((v) => !v)}
-        className="fixed bottom-16 left-3 z-40 flex h-10 items-center gap-1.5 rounded-full border border-zinc-200 bg-white px-3 shadow-md text-xs font-medium text-zinc-700 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 md:hidden"
-      >
-        <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-          <path strokeLinecap="round" strokeLinejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-        </svg>
-        채팅방
-      </button>
-
-      <aside className={`fixed bottom-12 left-0 top-12 z-40 flex w-64 flex-col border-r border-zinc-200 bg-white transition-transform duration-200 dark:border-zinc-800 dark:bg-zinc-950 md:w-56 md:translate-x-0 md:z-30 ${drawerOpen ? "translate-x-0" : "-translate-x-full"}`}>
+      <aside className={`fixed bottom-0 left-0 top-14 z-40 flex w-64 flex-col border-r border-zinc-200 bg-white transition-transform duration-200 dark:border-zinc-800 dark:bg-zinc-950 md:top-12 md:w-56 md:translate-x-0 md:z-30 ${drawerOpen ? "translate-x-0" : "-translate-x-full"}`}>
         {/* 드롭다운 외부 클릭 감지 backdrop */}
         {(!!openMenuId || !!folderMenuId) && (
           <div className="absolute inset-0 z-10" onClick={closeMenus} />

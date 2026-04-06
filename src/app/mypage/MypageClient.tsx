@@ -52,9 +52,9 @@ export function MypageClient({ email, initialNickname, freeBalance, paidBalance,
   }
 
   return (
-    <div className="flex h-[calc(100vh-3rem)] flex-col bg-zinc-50 text-zinc-900 dark:bg-black dark:text-zinc-50">
+    <div className="flex h-[calc(100vh-3.5rem)] md:h-[calc(100vh-3rem)] flex-col bg-zinc-50 text-zinc-900 dark:bg-black dark:text-zinc-50">
       <main className="flex-1 overflow-y-auto">
-        <div className="mx-auto w-full max-w-2xl px-6 py-10 pb-20">
+        <div className="mx-auto w-full max-w-2xl px-4 py-6 pb-24 md:px-6 md:py-10 md:pb-20">
           <header className="mb-8">
             <h1 className="text-2xl font-semibold tracking-tight">마이페이지</h1>
             <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
@@ -126,7 +126,7 @@ export function MypageClient({ email, initialNickname, freeBalance, paidBalance,
                   type="button"
                   disabled={savingNickname}
                   onClick={() => void saveNickname()}
-                  className="rounded-lg bg-zinc-900 px-4 py-2 text-xs font-medium text-white hover:bg-zinc-800 disabled:opacity-60 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
+                  className="min-h-[44px] w-full rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-60 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200 sm:min-h-0 sm:w-auto sm:text-xs"
                 >
                   {savingNickname ? "저장 중..." : "저장"}
                 </button>
@@ -135,7 +135,7 @@ export function MypageClient({ email, initialNickname, freeBalance, paidBalance,
 
             <Link
               href="/favorites"
-              className="flex items-center justify-between rounded-lg border border-zinc-200 bg-white px-4 py-3 text-sm font-medium hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-950 dark:hover:bg-zinc-900"
+              className="flex min-h-[52px] items-center justify-between rounded-lg border border-zinc-200 bg-white px-4 py-3 text-sm font-medium hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-950 dark:hover:bg-zinc-900"
             >
               <span>⭐ 즐겨찾기 목록 보기</span>
               <span className="text-zinc-400">→</span>
@@ -143,7 +143,7 @@ export function MypageClient({ email, initialNickname, freeBalance, paidBalance,
 
             <Link
               href="/personas"
-              className="flex items-center justify-between rounded-lg border border-zinc-200 bg-white px-4 py-3 text-sm font-medium hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-950 dark:hover:bg-zinc-900"
+              className="flex min-h-[52px] items-center justify-between rounded-lg border border-zinc-200 bg-white px-4 py-3 text-sm font-medium hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-950 dark:hover:bg-zinc-900"
             >
               <span>👤 페르소나 관리</span>
               <span className="text-zinc-400">→</span>
@@ -151,7 +151,7 @@ export function MypageClient({ email, initialNickname, freeBalance, paidBalance,
 
             <Link
               href="/my/following"
-              className="flex items-center justify-between rounded-lg border border-zinc-200 bg-white px-4 py-3 text-sm font-medium hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-950 dark:hover:bg-zinc-900"
+              className="flex min-h-[52px] items-center justify-between rounded-lg border border-zinc-200 bg-white px-4 py-3 text-sm font-medium hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-950 dark:hover:bg-zinc-900"
             >
               <span>👥 팔로우한 크리에이터</span>
               <span className="text-zinc-400">→</span>
@@ -178,13 +178,13 @@ export function MypageClient({ email, initialNickname, freeBalance, paidBalance,
                   <tbody>
                     {transactions.map((tx) => (
                       <tr key={tx.id} className="border-b border-zinc-50 last:border-0 dark:border-zinc-900">
-                        <td className="px-3 py-2 text-zinc-400">
+                        <td className="whitespace-nowrap px-3 py-3 text-zinc-400">
                           {new Date(tx.created_at).toLocaleDateString("ko-KR", { month: "2-digit", day: "2-digit" })}
                         </td>
-                        <td className="px-3 py-2 text-zinc-600 dark:text-zinc-300">
+                        <td className="px-3 py-3 text-zinc-600 dark:text-zinc-300">
                           {tx.description ?? TX_LABELS[tx.transaction_type] ?? tx.transaction_type}
                         </td>
-                        <td className={`px-3 py-2 text-right font-semibold tabular-nums ${tx.amount > 0 ? "text-green-600 dark:text-green-400" : "text-zinc-500"}`}>
+                        <td className={`whitespace-nowrap px-3 py-3 text-right font-semibold tabular-nums ${tx.amount > 0 ? "text-green-600 dark:text-green-400" : "text-zinc-500"}`}>
                           {tx.amount > 0 ? `+${tx.amount.toLocaleString()}` : tx.amount.toLocaleString()}
                         </td>
                       </tr>

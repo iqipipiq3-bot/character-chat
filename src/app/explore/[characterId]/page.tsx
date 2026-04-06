@@ -187,7 +187,7 @@ export default async function CharacterDetailPage({
   };
 
   return (
-    <div className="min-h-[calc(100vh-3rem)] bg-zinc-50 text-zinc-900 dark:bg-black dark:text-zinc-50">
+    <div className="min-h-[calc(100vh-3.5rem)] md:min-h-[calc(100vh-3rem)] bg-zinc-50 text-zinc-900 dark:bg-black dark:text-zinc-50">
       <CharacterDetailClient
         character={characterDetail}
         scenarios={scenarios}

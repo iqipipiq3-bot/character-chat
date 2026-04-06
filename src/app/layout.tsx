@@ -5,6 +5,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { ConversationSidebar } from "./ConversationSidebar";
 import { HeaderShell, HeaderPadding } from "./HeaderShell";
+import { BottomNav } from "./BottomNav";
 import { ToastContainer } from "./components/Toast";
 import { HeaderProvider } from "./context/HeaderContext";
 
@@ -136,6 +137,8 @@ export default async function RootLayout({
           <ToastContainer />
           {/* 고정 사이드바 — /explore, /dashboard에서만 표시 */}
           <ConversationSidebar />
+          {/* 모바일 하단 탭바 */}
+          <BottomNav />
           {/* 헤더 높이만큼 오프셋 (로그인/회원가입 페이지에서는 패딩 없음) */}
           <HeaderPadding>
             {children}

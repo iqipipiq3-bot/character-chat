@@ -222,7 +222,7 @@ export function CharacterDetailClient({
   }
 
   return (
-    <div className="mx-auto w-full max-w-2xl px-6 py-10 pb-24">
+    <div className="mx-auto w-full max-w-2xl px-4 py-6 pb-24 md:px-6 md:py-10">
 
       {/* ── 시나리오 선택 모달 ── */}
       {showScenarioPicker && (
@@ -272,9 +272,9 @@ export function CharacterDetailClient({
         </div>
       )}
       {/* ── 캐릭터 헤더 ── */}
-      <div className="flex gap-5">
+      <div className="flex flex-col items-center gap-4 sm:flex-row sm:items-start sm:gap-5">
         {/* 썸네일 */}
-        <div className="h-24 w-24 shrink-0 overflow-hidden rounded-2xl">
+        <div className="h-32 w-32 shrink-0 overflow-hidden rounded-2xl sm:h-24 sm:w-24">
           {character.thumbnail_url ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
@@ -284,7 +284,7 @@ export function CharacterDetailClient({
             />
           ) : (
             <div className={`flex h-full w-full items-center justify-center ${getCardGradient(character.id)}`}>
-              <span className="text-3xl font-bold text-white drop-shadow">
+              <span className="text-4xl font-bold text-white drop-shadow sm:text-3xl">
                 {character.name.charAt(0)}
               </span>
             </div>
@@ -292,9 +292,9 @@ export function CharacterDetailClient({
         </div>
 
         {/* 텍스트 정보 */}
-        <div className="min-w-0 flex-1">
+        <div className="w-full min-w-0 flex-1 text-center sm:text-left">
           {/* 이름 + 대화수 */}
-          <div className="flex items-center gap-3">
+          <div className="flex items-center justify-center gap-3 sm:justify-start">
             <h1 className="truncate text-2xl font-bold tracking-tight">{character.name}</h1>
             {character.usage_count ? (
               <span className="shrink-0 text-sm text-zinc-400 dark:text-zinc-500">
@@ -310,7 +310,7 @@ export function CharacterDetailClient({
 
           {/* 태그 */}
           {character.tags && character.tags.length > 0 && (
-            <div className="mt-2 flex flex-wrap gap-1.5">
+            <div className="mt-2 flex flex-wrap justify-center gap-1.5 sm:justify-start">
               {character.tags.map((tag) => (
                 <button
                   key={tag}
@@ -339,7 +339,7 @@ export function CharacterDetailClient({
               type="button"
               disabled={startingChat}
               onClick={() => void handleStartChat()}
-              className="rounded-lg bg-zinc-900 px-5 py-2 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-60 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
+              className="min-h-[44px] flex-1 rounded-lg bg-zinc-900 px-5 py-2.5 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-60 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200 sm:flex-none sm:py-2"
             >
               {startingChat ? "여는 중..." : "대화 시작"}
             </button>
@@ -348,7 +348,7 @@ export function CharacterDetailClient({
               disabled={togglingFavorite}
               onClick={() => void toggleFavorite()}
               title={isFavorited ? "즐겨찾기 해제" : "즐겨찾기 추가"}
-              className={`rounded-lg border px-3 py-2 text-sm transition-colors disabled:opacity-60 ${
+              className={`min-h-[44px] rounded-lg border px-4 py-2.5 text-sm transition-colors disabled:opacity-60 sm:py-2 ${
                 isFavorited
                   ? "border-yellow-400 bg-yellow-50 text-yellow-500 hover:bg-yellow-100 dark:border-yellow-600/60 dark:bg-yellow-950/30 dark:text-yellow-400 dark:hover:bg-yellow-900/30"
                   : "border-zinc-300 text-zinc-400 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-500 dark:hover:bg-zinc-800"
@@ -454,7 +454,7 @@ export function CharacterDetailClient({
                           <button
                             type="button"
                             onClick={() => startEdit(comment)}
-                            className="rounded px-2 py-1 text-[11px] text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+                            className="min-h-[36px] rounded px-2.5 py-1 text-xs text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800"
                           >
                             수정
                           </button>
@@ -464,7 +464,7 @@ export function CharacterDetailClient({
                             type="button"
                             disabled={deletingId === comment.id}
                             onClick={() => void handleDeleteComment(comment.id)}
-                            className="rounded px-2 py-1 text-[11px] text-red-500 hover:bg-red-50 disabled:opacity-50 dark:hover:bg-red-950/30"
+                            className="min-h-[36px] rounded px-2.5 py-1 text-xs text-red-500 hover:bg-red-50 disabled:opacity-50 dark:hover:bg-red-950/30"
                           >
                             삭제
                           </button>
@@ -495,7 +495,7 @@ export function CharacterDetailClient({
                 <button
                   type="submit"
                   disabled={submitting || !newComment.trim()}
-                  className="rounded-lg bg-zinc-900 px-4 py-2 text-xs font-medium text-white disabled:opacity-50 dark:bg-zinc-50 dark:text-zinc-900"
+                  className="min-h-[44px] rounded-lg bg-zinc-900 px-4 py-2 text-xs font-medium text-white disabled:opacity-50 dark:bg-zinc-50 dark:text-zinc-900 sm:min-h-0"
                 >
                   {submitting ? "등록 중..." : "등록"}
                 </button>

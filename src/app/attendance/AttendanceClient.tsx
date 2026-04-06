@@ -89,8 +89,8 @@ export function AttendanceClient({
   ];
 
   return (
-    <div className="flex min-h-[calc(100vh-3rem)] flex-col bg-zinc-50 dark:bg-black">
-      <div className="mx-auto w-full max-w-6xl px-4 py-8">
+    <div className="flex min-h-[calc(100vh-3.5rem)] md:min-h-[calc(100vh-3rem)] flex-col bg-zinc-50 dark:bg-black">
+      <div className="mx-auto w-full max-w-6xl px-4 py-6 pb-24 md:py-8 md:pb-8">
         <div className="grid grid-cols-1 gap-6 md:grid-cols-[200px_1fr_240px] md:items-start">
 
           {/* 왼쪽: 큐브 장식 */}
@@ -111,36 +111,36 @@ export function AttendanceClient({
             </div>
 
             {/* 캘린더 */}
-            <div className="rounded-2xl border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-950">
+            <div className="rounded-xl border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-950 sm:rounded-2xl sm:p-6">
               {/* 요일 헤더 */}
-              <div className="mb-3 grid grid-cols-7 text-center">
+              <div className="mb-2 grid grid-cols-7 text-center sm:mb-3">
                 {["일", "월", "화", "수", "목", "금", "토"].map((d) => (
-                  <div key={d} className="py-2 text-sm font-semibold text-zinc-400">
+                  <div key={d} className="py-1.5 text-xs font-semibold text-zinc-400 sm:py-2 sm:text-sm">
                     {d}
                   </div>
                 ))}
               </div>
               {/* 날짜 칸 */}
-              <div className="grid grid-cols-7 gap-2">
+              <div className="grid grid-cols-7 gap-1 sm:gap-2">
                 {calendarCells.map((day, idx) => {
-                  if (day === null) return <div key={`empty-${idx}`} className="h-20" />;
+                  if (day === null) return <div key={`empty-${idx}`} className="h-12 sm:h-20" />;
                   const dateStr = `${month}-${String(day).padStart(2, "0")}`;
                   const isToday = dateStr === today;
                   const isChecked = checkinDates.has(dateStr);
                   return (
                     <div
                       key={dateStr}
-                      className={`flex h-20 flex-col items-center justify-center rounded-xl ${
+                      className={`flex h-12 flex-col items-center justify-center rounded-lg sm:h-20 sm:rounded-xl ${
                         isToday
                           ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900"
                           : "text-zinc-700 dark:text-zinc-300"
                       }`}
                     >
-                      <span className="text-base font-semibold leading-none">{day}</span>
+                      <span className="text-xs font-semibold leading-none sm:text-base">{day}</span>
                       {isChecked ? (
-                        <CubeIcon className="mt-1.5 h-6 w-6 text-violet-500" />
+                        <CubeIcon className="mt-1 h-4 w-4 text-violet-500 sm:mt-1.5 sm:h-6 sm:w-6" />
                       ) : (
-                        <div className="mt-1.5 h-6 w-6" />
+                        <div className="mt-1 h-4 w-4 sm:mt-1.5 sm:h-6 sm:w-6" />
                       )}
                     </div>
                   );
@@ -154,7 +154,7 @@ export function AttendanceClient({
                 type="button"
                 onClick={() => void handleCheckin()}
                 disabled={checkedInToday || loading}
-                className={`w-full rounded-xl py-4 text-base font-semibold transition-colors ${
+                className={`w-full rounded-xl py-4 text-base font-semibold transition-colors min-h-[52px] ${
                   checkedInToday
                     ? "cursor-not-allowed bg-zinc-200 text-zinc-400 dark:bg-zinc-800 dark:text-zinc-600"
                     : "bg-zinc-900 text-white hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"

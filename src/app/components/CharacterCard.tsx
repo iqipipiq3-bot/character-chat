@@ -47,7 +47,7 @@ export function CharacterCard({ character, onClick }: Props) {
           <div
             className={`flex h-full w-full items-center justify-center ${getCardGradient(character.id)}`}
           >
-            <span className="text-6xl font-bold text-white drop-shadow-lg">
+            <span className="text-3xl sm:text-6xl font-bold text-white drop-shadow-lg">
               {character.name.charAt(0)}
             </span>
           </div>
