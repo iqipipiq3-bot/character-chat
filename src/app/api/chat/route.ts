@@ -697,6 +697,7 @@ export async function POST(request: NextRequest) {
     console.log("[system-prompt] 장기기억 길이:", memoryBlock?.length ?? 0, "자");
     console.log("[system-prompt] 로어북 길이:", matchingLorebooks.join("").length, "자");
     console.log("[system-prompt] 히스토리 턴 수:", sortedHistory.length, "턴");
+    console.log("[system-prompt] 전문:\n", finalSystemPrompt);
 
     let streamResult: Awaited<ReturnType<typeof geminiModel.generateContentStream>>;
 
