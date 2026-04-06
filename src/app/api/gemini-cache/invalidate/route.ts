@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { cookies } from "next/headers";
 import { createServerClient } from "@supabase/ssr";
-import { GoogleAICacheManager } from "@google/generative-ai/server";
+import { GoogleGenAI } from "@google/genai";
 
 type InvalidateBody = {
   character_id?: string;
@@ -103,11 +103,11 @@ export async function POST(request: NextRequest) {
     );
 
     if (uniqueCacheIds.length > 0) {
-      const cacheManager = new GoogleAICacheManager(getGeminiApiKey());
+      const ai = new GoogleGenAI({ apiKey: getGeminiApiKey() });
       await Promise.all(
         uniqueCacheIds.map(async (cacheId) => {
           try {
-            await cacheManager.delete(cacheId);
+            await ai.caches.delete({ name: cacheId });
           } catch (error) {
             console.error("[gemini-cache] remote delete failed:", cacheId, error);
           }

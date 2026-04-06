@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { cookies } from "next/headers";
 import { createServerClient } from "@supabase/ssr";
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import { GoogleGenAI } from "@google/genai";
 
 export const maxDuration = 60;
 
@@ -122,18 +122,17 @@ export async function POST(request: NextRequest) {
     ].join("\n");
 
     // ── Gemini 기억 추출 요청 ──────────────────────────────────────────────
-    const genAI = new GoogleGenerativeAI(getGeminiApiKey());
-    const model = genAI.getGenerativeModel({
+    const ai = new GoogleGenAI({ apiKey: getGeminiApiKey() });
+    const result = await ai.models.generateContent({
       model: "gemini-3.1-flash-lite-preview",
-      systemInstruction: SYSTEM_PROMPT,
-      generationConfig: {
+      contents: [{ role: "user", parts: [{ text: conversationText }] }],
+      config: {
+        systemInstruction: SYSTEM_PROMPT,
         temperature: 0.3,
         maxOutputTokens: 1024,
       },
     });
-
-    const result = await model.generateContent(conversationText);
-    const rawText = result.response.text().trim();
+    const rawText = (result.text ?? "").trim();
 
     // ── JSON 파싱 (코드 펜스 제거) ─────────────────────────────────────────
     let memories: ExtractedMemory[] = [];

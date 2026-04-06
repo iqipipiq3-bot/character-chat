@@ -443,8 +443,9 @@ export default function ChatPage() {
   const [editId, setEditId] = useState<string | null>(null);
   const [editText, setEditText] = useState("");
   const [savingEdit, setSavingEdit] = useState(false);
-  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+  const [contextMenu, setContextMenu] = useState<{ id: string; x: number; y: number } | null>(null);
   const editTextareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const inputTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const streamingReaderRef = useRef<ReadableStreamDefaultReader<Uint8Array> | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -452,6 +453,21 @@ export default function ChatPage() {
   const isTypingRef = useRef(false);
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const [isUserScrolling, setIsUserScrolling] = useState(false);
+
+  // 컨텍스트 메뉴 닫기 (다른 곳 클릭 / 스크롤 / Escape)
+  useEffect(() => {
+    if (!contextMenu) return;
+    function handleClose() { setContextMenu(null); }
+    function handleKeyDown(e: KeyboardEvent) { if (e.key === "Escape") setContextMenu(null); }
+    document.addEventListener("click", handleClose);
+    document.addEventListener("scroll", handleClose, true);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("click", handleClose);
+      document.removeEventListener("scroll", handleClose, true);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [contextMenu]);
 
   useEffect(() => {
     async function loadMessages() {
@@ -800,6 +816,36 @@ export default function ChatPage() {
 
   return (
     <div className="min-h-screen text-[#1A1A1A]" style={{ backgroundColor: fontSettings.chatBg || "#F8F8F8" }}>
+      {/* 우클릭 컨텍스트 메뉴 */}
+      {contextMenu && (
+        <div
+          style={{ position: "fixed", top: contextMenu.y, left: contextMenu.x, zIndex: 9999 }}
+          onClick={(e) => e.stopPropagation()}
+          className="overflow-hidden rounded-lg border border-[#E0E0E0] bg-white shadow-lg dark:border-zinc-700 dark:bg-zinc-800"
+        >
+          <button
+            type="button"
+            onClick={() => {
+              const msg = messages.find((m) => m.id === contextMenu.id);
+              if (msg) beginEdit(msg);
+              setContextMenu(null);
+            }}
+            className="w-full px-4 py-2.5 text-left text-xs text-[#333333] hover:bg-[#F8F8F8] dark:text-zinc-200 dark:hover:bg-zinc-700"
+          >
+            수정
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              void handleDeleteMessage(contextMenu.id);
+              setContextMenu(null);
+            }}
+            className="w-full px-4 py-2.5 text-left text-xs text-[#FF4444] hover:bg-[#FFF5F5] dark:hover:bg-zinc-700"
+          >
+            삭제
+          </button>
+        </div>
+      )}
       <main className="mx-auto flex w-full max-w-7xl flex-col px-3 md:px-4">
         {/* ── 헤더 ── */}
         <div className="sticky top-14 md:top-12 z-40 mb-2 md:mb-4 flex items-center justify-between gap-2 py-2 md:py-4" style={{ backgroundColor: fontSettings.chatBg || "#F8F8F8" }}>
@@ -925,7 +971,7 @@ export default function ChatPage() {
                       : m.role === "user"
                         ? "max-w-[88%] md:max-w-[85%]"
                         : "max-w-[96%] md:max-w-[95%]"
-                  } ${m.role === "user" ? "ml-auto" : "mr-auto"} ${openMenuId === m.id ? "z-20" : "z-0"}`}
+                  } ${m.role === "user" ? "ml-auto" : "mr-auto"}`}
                   style={{ isolation: "isolate" }}
                 >
                   {/* AI 말풍선 위 캐릭터 정보 */}
@@ -964,6 +1010,32 @@ export default function ChatPage() {
                       color:
                         m.role === "user" ? fontSettings.userFontColor : fontSettings.aiFontColor,
                       fontSize: fontSettings.fontSize,
+                    }}
+                    onContextMenu={(e) => {
+                      if (m.role === "loading" || editId === m.id) return;
+                      e.preventDefault();
+                      setContextMenu({ id: m.id, x: e.clientX, y: e.clientY });
+                    }}
+                    onTouchStart={(e) => {
+                      if (m.role === "loading" || editId === m.id) return;
+                      const touch = e.touches[0];
+                      const x = touch.clientX;
+                      const y = touch.clientY;
+                      longPressTimerRef.current = setTimeout(() => {
+                        setContextMenu({ id: m.id, x, y });
+                      }, 500);
+                    }}
+                    onTouchEnd={() => {
+                      if (longPressTimerRef.current) {
+                        clearTimeout(longPressTimerRef.current);
+                        longPressTimerRef.current = null;
+                      }
+                    }}
+                    onTouchMove={() => {
+                      if (longPressTimerRef.current) {
+                        clearTimeout(longPressTimerRef.current);
+                        longPressTimerRef.current = null;
+                      }
                     }}
                   >
                     {m.role === "loading" ? (
@@ -1018,42 +1090,6 @@ export default function ChatPage() {
                     )}
                   </div>
 
-                  {/* ... 버튼: 유저=우측 하단, AI=좌측 하단 (loading 제외) */}
-                  {editId !== m.id && m.role !== "loading" && (
-                    <div className={`absolute bottom-0 z-20 translate-y-full pt-1 opacity-0 transition-opacity group-hover:opacity-100 ${m.role === "user" ? "right-0" : "left-0"}`}>
-                      <button
-                        type="button"
-                        onClick={() => setOpenMenuId(openMenuId === m.id ? null : m.id)}
-                        className="flex h-6 w-6 items-center justify-center rounded-full border border-[#D0D0D0] bg-white text-xs text-[#666666] shadow-sm hover:bg-[#F0F0F0]"
-                      >
-                        ···
-                      </button>
-                      {openMenuId === m.id && (
-                        <div className={`absolute z-10 mt-1 w-20 overflow-hidden rounded-lg border border-[#E0E0E0] bg-white shadow-md ${m.role === "user" ? "right-0" : "left-0"}`}>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setOpenMenuId(null);
-                              beginEdit(m);
-                            }}
-                            className="w-full px-3 py-2 text-left text-xs text-[#333333] hover:bg-[#F8F8F8]"
-                          >
-                            수정
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setOpenMenuId(null);
-                              void handleDeleteMessage(m.id);
-                            }}
-                            className="w-full px-3 py-2 text-left text-xs text-[#FF4444] hover:bg-[#FFF5F5]"
-                          >
-                            삭제
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  )}
                 </div>
               </div>
             ))

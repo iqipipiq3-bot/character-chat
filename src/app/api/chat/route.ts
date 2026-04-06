@@ -1,15 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { cookies } from "next/headers";
 import { createServerClient } from "@supabase/ssr";
-import {
-  GoogleGenerativeAI,
-  HarmBlockThreshold,
-  HarmCategory,
-  type GenerationConfig,
-  type GenerativeModel,
-} from "@google/generative-ai";
-import { GoogleAICacheManager } from "@google/generative-ai/server";
-import type { CachedContent } from "@google/generative-ai/server";
+import { GoogleGenAI } from "@google/genai";
 import { replaceVariables } from "../../lib/replaceVariables";
 import { buildMemoryPrompt } from "../../lib/memory/buildMemoryPrompt";
 
@@ -43,13 +35,6 @@ type PostBody = {
   model?: string;
   active_persona_id?: string;
   user_note?: string;
-};
-
-type ExtendedGenerationConfig = GenerationConfig & {
-  thinkingConfig?: {
-    thinkingLevel?: string;
-    thinkingBudget?: number;
-  };
 };
 
 type ModelConfig = {
@@ -227,36 +212,14 @@ Core Guidelines:
 - Progression: Develop emotions, situational flow, physical actions, and relationship dynamics naturally.
 - Narrative & Relationships: Allow relationships and storylines to evolve organically based on the context.
 - Action: Maintain reactivity and tension while actively driving the scene forward.
-Response Rules:
-- Do not repeat the same sentences, expressions, or phrases in your output
-- If you must convey the same idea again, always rephrase it in a different way
-- Generate output that flows naturally without any loops or repetition
-- Do not stop after simply responding to the user's request; continue the narrative
-- Ensure smooth continuity without breaking the flow of the scene
+Response Rules: No repetition. No loops. Continue the narrative.
 
-System Rules
-- Focus: Emotional Narrative & Psychological Depth
-- Pacing: Slow-burn romance (build tension before action)
-- Logic: Context-dependent and character-driven
-- Priority: Emotional connection over physical interaction
-- Roleplay: Mature themes are allowed, but must be narratively justified
+System Rules: Emotional depth. Slow burn. Character-driven logic.
 
-Narrative Engine
-- Conflict Integration: Do not maintain a purely agreeable flow. Actively introduce conflicts, misunderstandings, or external events appropriate to the situation to sustain the narrative.
-- Complex Psychology: {{char}} should possess layered emotions beyond simple desire, such as guilt, hesitation, consideration, and possessiveness.
-- Show, Don't Tell: Avoid explicit explanations. Convey emotions indirectly through expressions, actions, and brief reactions.
+Narrative Engine: Introduce conflict naturally. Show don't tell. Layered psychology.
 
-Output Format Rules:
-- Dialogue must always be written in the format: "Dialogue"
-- Actions, emotions, psychological states, and environmental descriptions must always be written in the format: *Description*
-- Every response must include both descriptive narration and dialogue
-- Example:
-*His gaze slowly drifted toward the window. The tips of his fingers trembled ever so slightly.*
-"...I didn't see anything."
-*He let out a short breath, deliberately avoiding turning his head.*
-- Descriptive content may take up a larger portion (recommended ratio: 60% description, 40% dialogue)
-- Richly incorporate psychological, sensory, and environmental details
-- Never summarize or omit content; maintain a fully developed literary style throughout
+Output Format: *Description* "Dialogue" format.
+60% description, 40% dialogue.
 `.trim();
 }
 
@@ -268,16 +231,17 @@ async function createGeminiCache(
   apiKey: string,
   modelId: string,
   systemPrompt: string
-): Promise<CachedContent> {
-  const cacheManager = new GoogleAICacheManager(apiKey);
-  return await cacheManager.create({
+): Promise<{ name: string }> {
+  const ai = new GoogleGenAI({ apiKey });
+  const cache = await ai.caches.create({
     model: modelId,
-    systemInstruction: systemPrompt,
-    contents: [],
-    ttlSeconds: 3600,
+    config: {
+      systemInstruction: systemPrompt,
+      ttl: "3600s",
+    },
   });
+  return { name: cache.name! };
 }
-
 
 function calculateEstimatedCost(params: {
   modelId: string;
@@ -545,10 +509,6 @@ export async function POST(request: NextRequest) {
       ? `${finalSystemPromptBase}\n\n${memoryBlock}`
       : finalSystemPromptBase;
 
-
-    let activeCachedContent: CachedContent | null = null;
-    let cacheStorageTokens = 0;
-
     const conversationParts = sortedHistory.map((entry) => ({
       role: entry.role === "assistant" ? "model" : "user",
       content: replaceVariables(entry.content, userName),
@@ -559,62 +519,47 @@ export async function POST(request: NextRequest) {
       content: replaceVariables(message, userName),
     });
 
-    // 캐시 사용 시 페르소나/유저노트/로어북을 동적으로 앞에 주입
-    if (activeCachedContent) {
-      const dynamicLines: string[] = [];
-      if (userPersona) dynamicLines.push(`User Persona: ${userPersona}`);
-      if (userNote) dynamicLines.push(`User Note: ${userNote}`);
-      if (matchingLorebooks.length > 0) {
-        dynamicLines.push(
-          `Active Lorebook Entries:\n${matchingLorebooks.map((e) => `- ${e}`).join("\n")}`
-        );
-      }
-      if (dynamicLines.length > 0) {
-        conversationParts.unshift(
-          { role: "model", content: "Understood." },
-          { role: "user", content: `[Dynamic Context]\n${dynamicLines.join("\n\n")}` }
-        );
-      }
-    }
+    // ── Generation config ────────────────────────────────────────────────
+    type GenConfig = {
+      maxOutputTokens: number;
+      temperature: number;
+      topP: number;
+      topK: number;
+      presencePenalty?: number;
+      thinkingConfig?: { thinkingLevel?: string; thinkingBudget?: number };
+      safetySettings: Array<{ category: string; threshold: string }>;
+      systemInstruction?: string;
+      cachedContent?: string;
+    };
 
-    const generationConfig: ExtendedGenerationConfig = {
+    const baseConfig: GenConfig = {
       maxOutputTokens: modelCfg.maxOutputTokens,
       temperature: modelCfg.temperature,
       topP: modelCfg.topP,
       topK: modelCfg.topK,
+      safetySettings: [
+        { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" },
+        { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
+        { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
+        { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" },
+      ],
     };
 
     if (modelCfg.presencePenalty !== null) {
-      generationConfig.presencePenalty = modelCfg.presencePenalty;
+      baseConfig.presencePenalty = modelCfg.presencePenalty;
     }
-
     if (modelCfg.thinkingLevel !== null) {
-      generationConfig.thinkingConfig = { thinkingLevel: modelCfg.thinkingLevel };
+      baseConfig.thinkingConfig = { thinkingLevel: modelCfg.thinkingLevel };
     } else if (modelCfg.thinkingBudget !== null) {
-      generationConfig.thinkingConfig = { thinkingBudget: modelCfg.thinkingBudget };
+      baseConfig.thinkingConfig = { thinkingBudget: modelCfg.thinkingBudget };
     }
 
     const apiKey = getGeminiApiKey();
-    const genAI = new GoogleGenerativeAI(apiKey);
+    const ai = new GoogleGenAI({ apiKey });
 
-    const safetySettings = [
-      {
-        category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
-        threshold: HarmBlockThreshold.BLOCK_NONE,
-      },
-      {
-        category: HarmCategory.HARM_CATEGORY_HATE_SPEECH,
-        threshold: HarmBlockThreshold.BLOCK_NONE,
-      },
-      {
-        category: HarmCategory.HARM_CATEGORY_HARASSMENT,
-        threshold: HarmBlockThreshold.BLOCK_NONE,
-      },
-      {
-        category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
-        threshold: HarmBlockThreshold.BLOCK_NONE,
-      },
-    ];
+    // ── 캐시 처리 ────────────────────────────────────────────────────────
+    let activeCacheName: string | null = null;
+    let cacheStorageTokens = 0;
 
     const includeScenarioInCache = (totalUserMsgCount ?? 0) < 20 && !!scenarioPrompt;
     const cacheSystemPrompt = replacePromptVariables(
@@ -640,9 +585,8 @@ export async function POST(request: NextRequest) {
 
       if (existingCacheId && !isExpired) {
         try {
-          const cacheManager = new GoogleAICacheManager(apiKey);
-          const cachedContent = await cacheManager.get(existingCacheId);
-          activeCachedContent = cachedContent;
+          const cached = await ai.caches.get({ name: existingCacheId });
+          activeCacheName = cached.name ?? null;
           console.log("[cache] 재사용:", existingCacheId);
         } catch (cacheErr) {
           console.error("[gemini-cache] Failed to retrieve cached content:", cacheErr);
@@ -653,7 +597,7 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      if (!activeCachedContent) {
+      if (!activeCacheName) {
         console.log("[cache] 신규 생성 시도");
         try {
           const newCache = await createGeminiCache(apiKey, modelId, cacheSystemPrompt);
@@ -669,29 +613,37 @@ export async function POST(request: NextRequest) {
           if (updateErr) {
             console.error("[cache] conversations 업데이트 실패:", updateErr.message);
           }
-          activeCachedContent = newCache;
-          cacheStorageTokens =
-            (newCache as unknown as { usageMetadata?: { totalTokenCount?: number } })
-              .usageMetadata?.totalTokenCount ?? 0;
+          activeCacheName = newCache.name;
+          cacheStorageTokens = 0; // new SDK doesn't return usageMetadata on create directly
           console.log("[cache] 생성 성공:", newCache.name);
         } catch (err) {
-          const message = err instanceof Error ? err.message : String(err);
-          console.log("[cache] 실패 폴백:", message);
+          const errMessage = err instanceof Error ? err.message : String(err);
+          console.log("[cache] 실패 폴백:", errMessage);
         }
       }
     }
 
-    const geminiModel: GenerativeModel = activeCachedContent
-      ? genAI.getGenerativeModelFromCachedContent(activeCachedContent, {
-          generationConfig,
-          safetySettings,
-        })
-      : genAI.getGenerativeModel({
-          model: modelId,
-          systemInstruction: finalSystemPrompt,
-          generationConfig,
-          safetySettings,
-        });
+    // 캐시 사용 시 페르소나/유저노트/로어북을 동적으로 앞에 주입
+    if (activeCacheName) {
+      const dynamicLines: string[] = [];
+      if (userPersona) dynamicLines.push(`User Persona: ${userPersona}`);
+      if (userNote) dynamicLines.push(`User Note: ${userNote}`);
+      if (matchingLorebooks.length > 0) {
+        dynamicLines.push(
+          `Active Lorebook Entries:\n${matchingLorebooks.map((e) => `- ${e}`).join("\n")}`
+        );
+      }
+      if (dynamicLines.length > 0) {
+        conversationParts.unshift(
+          { role: "model", content: "Understood." },
+          { role: "user", content: `[Dynamic Context]\n${dynamicLines.join("\n\n")}` }
+        );
+      }
+    }
+
+    const genConfig: GenConfig = activeCacheName
+      ? { ...baseConfig, cachedContent: activeCacheName }
+      : { ...baseConfig, systemInstruction: finalSystemPrompt };
 
     console.log("[system-prompt] 총 길이:", finalSystemPrompt.length, "자");
     console.log("[system-prompt] 장기기억 길이:", memoryBlock?.length ?? 0, "자");
@@ -699,18 +651,17 @@ export async function POST(request: NextRequest) {
     console.log("[system-prompt] 히스토리 턴 수:", sortedHistory.length, "턴");
     console.log("[system-prompt] 전문:\n", finalSystemPrompt);
 
-    let streamResult: Awaited<ReturnType<typeof geminiModel.generateContentStream>>;
+    let streamResult: Awaited<ReturnType<typeof ai.models.generateContentStream>>;
 
     try {
-      streamResult = await geminiModel.generateContentStream(
-        {
-          contents: conversationParts.map((entry) => ({
-            role: entry.role,
-            parts: [{ text: entry.content }],
-          })),
-        },
-        { signal: request.signal }
-      );
+      streamResult = await ai.models.generateContentStream({
+        model: modelId,
+        contents: conversationParts.map((entry) => ({
+          role: entry.role,
+          parts: [{ text: entry.content }],
+        })),
+        config: genConfig as Parameters<typeof ai.models.generateContentStream>[0]["config"],
+      });
     } catch (sdkError) {
       if (request.signal.aborted) {
         return new Response(null, { status: 499 });
@@ -729,24 +680,32 @@ export async function POST(request: NextRequest) {
         let fullReply = "";
 
         try {
-          for await (const chunk of streamResult.stream) {
+          type UsageMeta = {
+            promptTokenCount?: number;
+            candidatesTokenCount?: number;
+            totalTokenCount?: number;
+            cachedContentTokenCount?: number;
+            thoughtsTokenCount?: number;
+          };
+          let usageMeta: UsageMeta = {};
+
+          for await (const chunk of streamResult) {
             if (request.signal.aborted) break;
-            const text = chunk.text();
+            const text = chunk.text;
             if (!text) continue;
 
             fullReply += text;
             controller.enqueue(encoder.encode(`data: ${JSON.stringify({ text })}\n\n`));
+            if (chunk.usageMetadata) {
+              usageMeta = chunk.usageMetadata as UsageMeta;
+            }
           }
 
-          const finalResponse = await streamResult.response;
-          const usage = finalResponse.usageMetadata;
-          const promptTokens = usage?.promptTokenCount ?? null;
-          const cachedPromptTokens =
-            (usage as { cachedContentTokenCount?: number } | undefined)?.cachedContentTokenCount ?? null;
-          const completionTokens = usage?.candidatesTokenCount ?? null;
-          const thinkingTokens =
-            (usage as { thoughtsTokenCount?: number } | undefined)?.thoughtsTokenCount ?? null;
-          const totalTokens = usage?.totalTokenCount ?? null;
+          const promptTokens = usageMeta.promptTokenCount ?? null;
+          const cachedPromptTokens = usageMeta.cachedContentTokenCount ?? null;
+          const completionTokens = usageMeta.candidatesTokenCount ?? null;
+          const thinkingTokens = usageMeta.thoughtsTokenCount ?? null;
+          const totalTokens = usageMeta.totalTokenCount ?? null;
 
           const calculatedCost = calculateEstimatedCost({
             modelId,
@@ -839,19 +798,22 @@ export async function POST(request: NextRequest) {
             const turnStart = currentTurnCount - 4;
             const turnRangeLabel = `${turnStart}-${currentTurnCount}`;
 
-            const extractGenAI = new GoogleGenerativeAI(apiKey);
-            const extractModel = extractGenAI.getGenerativeModel({
-              model: "gemini-3.1-flash-lite-preview",
-              systemInstruction: MEMORY_EXTRACT_SYSTEM_PROMPT,
-              generationConfig: { temperature: 0.3, maxOutputTokens: 1024 },
-            });
             const turnText = [
               `[현재 턴 구간: ${turnRangeLabel}]`,
               `유저: ${message}`,
               `캐릭터: ${finalReply}`,
             ].join("\n");
-            const extractResult = await extractModel.generateContent(turnText);
-            const rawMemoryText = extractResult.response.text().trim();
+
+            const extractResult = await ai.models.generateContent({
+              model: "gemini-3.1-flash-lite-preview",
+              contents: [{ role: "user", parts: [{ text: turnText }] }],
+              config: {
+                systemInstruction: MEMORY_EXTRACT_SYSTEM_PROMPT,
+                temperature: 0.3,
+                maxOutputTokens: 1024,
+              },
+            });
+            const rawMemoryText = (extractResult.text ?? "").trim();
 
             let extractedMemories: Array<{
               type: string;
@@ -911,7 +873,7 @@ export async function POST(request: NextRequest) {
                     .eq("is_active", true);
                 }
 
-                const { error: insertError } = await supabase.from("conversation_memories").insert({
+                const { error: memInsertError } = await supabase.from("conversation_memories").insert({
                   conversation_id: conversationId,
                   character_id: characterId,
                   user_id: user.id,
@@ -924,8 +886,8 @@ export async function POST(request: NextRequest) {
                   is_active: true,
                 });
 
-                if (insertError) {
-                  console.error("[api/chat] 기억 insert 실패:", insertError);
+                if (memInsertError) {
+                  console.error("[api/chat] 기억 insert 실패:", memInsertError);
                 } else {
                   savedCount++;
                 }
@@ -934,7 +896,7 @@ export async function POST(request: NextRequest) {
             }
           } catch (memErr) {
             console.error("[api/chat] 기억 추출 실패 (무시):", memErr);
-          } // end if (currentTurnCount % 10 === 0)
+          } // end if (currentTurnCount % 5 === 0)
 
           if (insertError) {
             console.error("[api/chat] DB insert error:", insertError.message);
