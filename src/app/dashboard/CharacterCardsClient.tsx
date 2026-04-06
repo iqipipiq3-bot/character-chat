@@ -114,24 +114,79 @@ export function CharacterCardsClient({ initial }: Props) {
     setBusyId(character.id);
     try {
       const supabase = createSupabaseBrowserClient();
-      const { data: original, error: originalError } = await supabase
-        .from("characters")
-        .select("name, prompt, model, description")
-        .eq("id", character.id)
-        .maybeSingle();
-      if (originalError) throw originalError;
-      if (!original) throw new Error("캐릭터를 찾을 수 없습니다.");
       const { data: userResult, error: userError } = await supabase.auth.getUser();
       if (userError) throw userError;
       if (!userResult.user) throw new Error("로그인이 필요합니다.");
-      const { error: insertError } = await supabase.from("characters").insert({
-        user_id: userResult.user.id,
-        name: `[복사] ${original.name}`,
-        prompt: original.prompt,
-        model: original.model,
-        description: original.description,
-      });
+
+      // 캐릭터 + 로어북 + 시나리오 병렬 조회
+      const [
+        { data: original, error: originalError },
+        { data: lorebooks },
+        { data: scenarios },
+      ] = await Promise.all([
+        supabase
+          .from("characters")
+          .select("name, prompt, model, description, thumbnail_url, visibility, is_public")
+          .eq("id", character.id)
+          .maybeSingle(),
+        supabase
+          .from("character_lorebooks")
+          .select("title, keyword, content, order")
+          .eq("character_id", character.id)
+          .order("order", { ascending: true }),
+        supabase
+          .from("character_scenarios")
+          .select("name, first_message, scenario_prompt")
+          .eq("character_id", character.id),
+      ]);
+
+      if (originalError) throw originalError;
+      if (!original) throw new Error("캐릭터를 찾을 수 없습니다.");
+
+      // 새 캐릭터 insert
+      const { data: newChar, error: insertError } = await supabase
+        .from("characters")
+        .insert({
+          user_id: userResult.user.id,
+          name: `[복사] ${original.name as string}`,
+          prompt: original.prompt,
+          model: original.model,
+          description: original.description,
+          thumbnail_url: original.thumbnail_url,
+          visibility: original.visibility ?? "private",
+          is_public: original.is_public ?? false,
+        })
+        .select("id")
+        .single();
       if (insertError) throw insertError;
+
+      const newId = (newChar as { id: string }).id;
+
+      // 로어북 복사
+      if (lorebooks && lorebooks.length > 0) {
+        await supabase.from("character_lorebooks").insert(
+          (lorebooks as Array<{ title: string | null; keyword: unknown; content: string; order: number }>).map((l) => ({
+            character_id: newId,
+            title: l.title,
+            keyword: l.keyword,
+            content: l.content,
+            order: l.order,
+          }))
+        );
+      }
+
+      // 시나리오 복사
+      if (scenarios && scenarios.length > 0) {
+        await supabase.from("character_scenarios").insert(
+          (scenarios as Array<{ name: string; first_message: string; scenario_prompt: string }>).map((s) => ({
+            character_id: newId,
+            name: s.name,
+            first_message: s.first_message,
+            scenario_prompt: s.scenario_prompt,
+          }))
+        );
+      }
+
       router.refresh();
     } catch (err) {
       window.alert(err instanceof Error ? err.message : "복사 중 오류가 발생했습니다.");

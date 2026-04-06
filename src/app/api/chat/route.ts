@@ -100,22 +100,18 @@ const MODEL_CONFIG: Record<(typeof ALLOWED_MODELS)[number], ModelConfig> = {
     systemSuffix: "",
   },
   "gemini-3.1-pro-preview": {
-    maxOutputTokens: 3200,
-    temperature: 0.95,
-    topP: 0.9,
-    topK: 20,
+    maxOutputTokens: 3300,
+    temperature: 1.2,
+    topP: 0.95,
+    topK: 40,
     presencePenalty: null,
     thinkingBudget: null,
     thinkingLevel: "LOW",
     promptStyle: "lowThinking",
     systemSuffix: `
-Output in Korean.
-Target length: 1,500~2,000 Korean characters for a normal reply.
-Treat the character prompt as the source of truth. Do not reinterpret it into extra hidden rules.
-Reply with only the immediate next beat of the scene.
-Prefer concrete action and dialogue over analysis or elaborate planning.
-Write a fully developed response for the current beat, not a terse reply.
-Do not explain your reasoning, summarize, or map out future beats.
+Output in Korean. Target length: 1,500~2,000 characters.
+No repetition. No summary. Advance the scene forward.
+Respond immediately without excessive internal reasoning.
 `,
   },
 };
@@ -218,7 +214,6 @@ Output Format Rules:
 - Dialogue must be written in the format: "Dialogue"
 - Actions and descriptions must be written in the format: *Description*
 - Include both dialogue and description while staying focused on the present scene
-- Aim for a normal reply length of about 1,500~2,000 Korean characters unless the scene naturally calls for less
 `.trim()
       : `
 Core Guidelines:
@@ -235,9 +230,9 @@ Response Rules:
 
 System Rules
 - Focus: Emotional Narrative & Psychological Depth
-- Pacing: Do not rush romantic or sexual progression. Build tension and emotional context naturally before escalating physical interaction.
+- Pacing: Escalate physical and intimate interactions gradually; do not rush toward sexual content unless the emotional context has fully developed to support it
 - Logic: Context-dependent and character-driven
-- Priority: Let physical or sexual escalation feel earned through emotional buildup, not immediate impulse.
+- Restraint: Physical and sexual escalation must be earned through narrative buildup — never initiated impulsively or without sufficient emotional grounding
 - Roleplay: Mature themes are allowed, but must be narratively justified
 
 Narrative Engine
@@ -676,21 +671,22 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // 캐시 사용 시 페르소나/유저노트/로어북을 동적으로 앞에 주입
+    // 캐시 사용 시 페르소나/유저노트/로어북을 마지막 user 메시지 앞에 prefix로 주입
     if (activeCacheName) {
-      const dynamicLines: string[] = [];
-      if (userPersona) dynamicLines.push(`User Persona: ${userPersona}`);
-      if (userNote) dynamicLines.push(`User Note: ${userNote}`);
+      const contextPrefix: string[] = [];
+      if (userPersona) contextPrefix.push(`User Persona: ${userPersona}`);
+      if (userNote) contextPrefix.push(`User Note: ${userNote}`);
       if (matchingLorebooks.length > 0) {
-        dynamicLines.push(
-          `Active Lorebook Entries:\n${matchingLorebooks.map((e) => `- ${e}`).join("\n")}`
+        contextPrefix.push(
+          `Active Lorebook:\n${matchingLorebooks.map((e) => `- ${e}`).join("\n")}`
         );
       }
-      if (dynamicLines.length > 0) {
-        conversationParts.unshift(
-          { role: "model", content: "Understood." },
-          { role: "user", content: `[Dynamic Context]\n${dynamicLines.join("\n\n")}` }
-        );
+      if (contextPrefix.length > 0) {
+        const lastUserIdx = conversationParts.length - 1;
+        conversationParts[lastUserIdx] = {
+          ...conversationParts[lastUserIdx],
+          content: `[Context for this turn]\n${contextPrefix.join("\n")}\n---\n${conversationParts[lastUserIdx].content}`,
+        };
       }
     }
 

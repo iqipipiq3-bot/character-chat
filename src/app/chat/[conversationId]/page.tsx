@@ -442,6 +442,7 @@ export default function ChatPage() {
   const [error, setError] = useState<string | null>(null);
   const [editId, setEditId] = useState<string | null>(null);
   const [editText, setEditText] = useState("");
+  const [editError, setEditError] = useState<string | null>(null);
   const [savingEdit, setSavingEdit] = useState(false);
   const [contextMenu, setContextMenu] = useState<{ id: string; x: number; y: number } | null>(null);
   const editTextareaRef = useRef<HTMLTextAreaElement | null>(null);
@@ -575,18 +576,19 @@ export default function ChatPage() {
   function cancelEdit() {
     setEditId(null);
     setEditText("");
+    setEditError(null);
   }
 
   async function saveEdit(messageId: string) {
     const text = editText.trim();
     if (!text) {
-      setError("메시지는 비워둘 수 없습니다.");
+      setEditError("메시지는 비워둘 수 없습니다.");
       return;
     }
     if (savingEdit) return;
 
+    setEditError(null);
     setSavingEdit(true);
-    setError(null);
     try {
       const supabase = createSupabaseBrowserClient();
       const { error: updateError } = await supabase
@@ -599,7 +601,8 @@ export default function ChatPage() {
       cancelEdit();
     } catch (err) {
       const msg = err instanceof Error ? err.message : "수정 중 오류가 발생했습니다.";
-      setError(msg);
+      setEditError(msg);
+      setTimeout(() => setEditError(null), 3000);
     } finally {
       setSavingEdit(false);
     }
@@ -1085,6 +1088,9 @@ export default function ChatPage() {
                             {savingEdit ? "저장 중..." : "저장"}
                           </button>
                         </div>
+                        {editError && (
+                          <p className="mt-2 text-right text-xs text-red-500">{editError}</p>
+                        )}
                       </div>
                     ) : (
                       /* 유저 / AI 공통 마크다운 렌더링 */
