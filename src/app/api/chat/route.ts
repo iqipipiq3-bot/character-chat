@@ -545,6 +545,7 @@ export async function POST(request: NextRequest) {
       ? `${finalSystemPromptBase}\n\n${memoryBlock}`
       : finalSystemPromptBase;
 
+
     let activeCachedContent: CachedContent | null = null;
     let cacheStorageTokens = 0;
 
@@ -691,6 +692,11 @@ export async function POST(request: NextRequest) {
           generationConfig,
           safetySettings,
         });
+
+    console.log("[system-prompt] 총 길이:", finalSystemPrompt.length, "자");
+    console.log("[system-prompt] 장기기억 길이:", memoryBlock?.length ?? 0, "자");
+    console.log("[system-prompt] 로어북 길이:", matchingLorebooks.join("").length, "자");
+    console.log("[system-prompt] 히스토리 턴 수:", sortedHistory.length, "턴");
 
     let streamResult: Awaited<ReturnType<typeof geminiModel.generateContentStream>>;
 
