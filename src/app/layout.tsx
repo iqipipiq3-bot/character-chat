@@ -118,7 +118,19 @@ export default async function RootLayout({
   }
 
   return (
-    <html lang="ko">
+    <html lang="ko" suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: `
+          (function(){
+            try {
+              var theme = localStorage.getItem('theme') || 'system';
+              if (theme === 'dark' || (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+                document.documentElement.classList.add('dark');
+              }
+            } catch(e) {}
+          })();
+        `}} />
+      </head>
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
         <HeaderProvider
           initialFreeBalance={freeBalance}

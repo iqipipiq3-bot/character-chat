@@ -243,10 +243,12 @@ export default function ChatPage() {
     const savedFont = localStorage.getItem("chat_font_settings");
     if (savedFont) {
       try {
-        const parsed = JSON.parse(savedFont) as FontSettings;
-        const nextFontSettings = parsed.aiBubbleBg === LEGACY_DEFAULT_AI_BUBBLE_BG
-          ? { ...parsed, aiBubbleBg: DEFAULT_AI_BUBBLE_BG }
-          : parsed;
+        const parsed = JSON.parse(savedFont) as Partial<FontSettings>;
+        const nextFontSettings: FontSettings = {
+          ...DEFAULT_FONT_SETTINGS,
+          ...parsed,
+          aiBubbleBg: parsed.aiBubbleBg === LEGACY_DEFAULT_AI_BUBBLE_BG ? DEFAULT_AI_BUBBLE_BG : (parsed.aiBubbleBg ?? DEFAULT_FONT_SETTINGS.aiBubbleBg),
+        };
         setFontSettings(nextFontSettings);
         localStorage.setItem("chat_font_settings", JSON.stringify(nextFontSettings));
       } catch { /* ignore */ }
@@ -443,7 +445,9 @@ export default function ChatPage() {
   const [savingEdit, setSavingEdit] = useState(false);
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const editTextareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const inputTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const streamingReaderRef = useRef<ReadableStreamDefaultReader<Uint8Array> | null>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
   const typingQueueRef = useRef<string[]>([]);
   const isTypingRef = useRef(false);
   const bottomRef = useRef<HTMLDivElement | null>(null);
@@ -591,6 +595,8 @@ export default function ChatPage() {
   }
 
   async function handleStop() {
+    abortControllerRef.current?.abort();
+    abortControllerRef.current = null;
     typingQueueRef.current = [];
     isTypingRef.current = false;
     if (streamingReaderRef.current) {
@@ -600,6 +606,10 @@ export default function ChatPage() {
     setMessages((prev) => prev.filter((m) => !m.id.startsWith("temp-")));
     setLoading(false);
   }
+
+  useEffect(() => {
+    return () => { abortControllerRef.current?.abort(); };
+  }, []);
 
   async function handleSend(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -626,10 +636,13 @@ export default function ChatPage() {
     await new Promise<void>((resolve) => setTimeout(resolve, 0));
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
 
+    abortControllerRef.current = new AbortController();
+
     try {
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        signal: abortControllerRef.current.signal,
         body: JSON.stringify({
           character_id: characterId,
           conversation_id: conversationId,
@@ -774,21 +787,22 @@ export default function ChatPage() {
 
       await waitForTypingToFinish();
     } catch (err) {
+      if (err instanceof Error && err.name === "AbortError") return;
       const msg = err instanceof Error ? err.message : "네트워크 오류가 발생했습니다.";
       setError(msg);
     } finally {
+      abortControllerRef.current = null;
       streamingReaderRef.current = null;
-      // 혹시 남은 loading 메시지 제거
       setMessages((prev) => prev.filter((m) => m.role !== "loading"));
       setLoading(false);
     }
   }
 
   return (
-    <div className="min-h-screen bg-[#F8F8F8] text-[#1A1A1A]">
+    <div className="min-h-screen text-[#1A1A1A]" style={{ backgroundColor: fontSettings.chatBg || "#F8F8F8" }}>
       <main className="mx-auto flex w-full max-w-7xl flex-col px-3 md:px-4">
         {/* ── 헤더 ── */}
-        <div className="sticky top-14 md:top-12 z-40 mb-2 md:mb-4 flex items-center justify-between gap-2 bg-[#F8F8F8] py-2 md:py-4">
+        <div className="sticky top-14 md:top-12 z-40 mb-2 md:mb-4 flex items-center justify-between gap-2 py-2 md:py-4" style={{ backgroundColor: fontSettings.chatBg || "#F8F8F8" }}>
           {/* 좌: 뒤로가기 */}
           <button
             type="button"
@@ -1055,43 +1069,61 @@ export default function ChatPage() {
 
         <form
           onSubmit={handleSend}
-          className="fixed bottom-0 left-0 right-0 z-40 border-t border-[#E8E8E8] bg-[#F8F8F8] px-3 pt-2 pb-2 md:px-4 md:pt-3 md:pb-3"
-          style={{ paddingBottom: "max(0.5rem, env(safe-area-inset-bottom))" }}
+          className="fixed bottom-0 left-0 right-0 z-40 px-3 pb-2 pt-2 md:px-4 md:pb-3 md:pt-2"
+          style={{ backgroundColor: fontSettings.chatBg || "#F8F8F8", paddingBottom: "max(0.5rem, env(safe-area-inset-bottom))" }}
         >
-          <div className="mx-auto flex w-full max-w-7xl gap-2">
-          <textarea
-            rows={2}
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
-                e.preventDefault();
-                if (input.trim() && !loading) {
-                  e.currentTarget.form?.requestSubmit();
-                }
-              }
-            }}
-            disabled={loading}
-            className="flex-1 resize-none rounded-lg border border-[#E0E0E0] bg-white px-3 py-2 text-sm outline-none focus:border-[#666666] disabled:opacity-60"
-            placeholder="메시지를 입력하세요..."
-          />
-          {loading ? (
-            <button
-              type="button"
-              onClick={() => void handleStop()}
-              className="h-[44px] self-end rounded-lg bg-red-500 px-4 text-sm font-medium text-white hover:bg-red-600"
-            >
-              중지
-            </button>
-          ) : (
-            <button
-              type="submit"
-              disabled={!input.trim()}
-              className="h-[44px] self-end rounded-lg bg-[#1A1A2E] px-4 text-sm font-medium text-white disabled:opacity-60"
-            >
-              전송
-            </button>
-          )}
+          <div className="mx-auto w-full max-w-7xl">
+            {/* 통합 입력 박스 */}
+            <div className="rounded-2xl border border-zinc-200 bg-white px-3 pt-3 pb-2 dark:border-zinc-700 dark:bg-zinc-800">
+              <textarea
+                ref={inputTextareaRef}
+                rows={1}
+                value={input}
+                onChange={(e) => {
+                  setInput(e.target.value);
+                  const el = e.target;
+                  el.style.height = "auto";
+                  el.style.height = el.scrollHeight + "px";
+                  el.style.overflowY = el.scrollHeight > 200 ? "auto" : "hidden";
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && e.ctrlKey && !e.nativeEvent.isComposing) {
+                    e.preventDefault();
+                    if (input.trim() && !loading) {
+                      e.currentTarget.form?.requestSubmit();
+                    }
+                  }
+                }}
+                disabled={loading}
+                style={{ height: "auto", maxHeight: "200px", overflowY: "hidden" }}
+                className="w-full resize-none border-0 bg-transparent text-sm text-[#1A1A1A] outline-none placeholder:text-zinc-400 disabled:opacity-60 dark:text-zinc-100 dark:placeholder:text-zinc-500"
+                placeholder="메시지를 입력하세요..."
+              />
+              {/* 하단 버튼 행 */}
+              <div className="mt-2 flex justify-end">
+                {loading ? (
+                  <button
+                    type="button"
+                    onClick={() => void handleStop()}
+                    className="flex h-9 items-center gap-1.5 rounded-full bg-red-500 px-4 text-sm font-medium text-white hover:bg-red-600"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="h-3.5 w-3.5">
+                      <rect x="6" y="6" width="12" height="12" rx="1" />
+                    </svg>
+                    중지
+                  </button>
+                ) : (
+                  <button
+                    type="submit"
+                    disabled={!input.trim()}
+                    className="flex h-9 flex-col items-center justify-center rounded-full bg-[#1A1A2E] px-5 text-white disabled:opacity-40 hover:bg-[#2a2a4e]"
+                  >
+                    <span className="text-xs font-semibold leading-none">전송</span>
+                    <span className="text-[9px] leading-none opacity-60 mt-0.5">Ctrl+Enter</span>
+                  </button>
+                )}
+              </div>
+            </div>
           </div>
         </form>
       </main>

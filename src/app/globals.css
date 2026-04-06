@@ -4,6 +4,9 @@
 @import "@fontsource/pretendard/600.css";
 @import "@fontsource/pretendard/700.css";
 
+/* Tailwind v4: class-based dark mode */
+@custom-variant dark (&:where(.dark, .dark *));
+
 :root {
   --background: #ffffff;
   --foreground: #171717;
@@ -16,11 +19,16 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html.dark {
+  --background: #1a1a1a;
+  --foreground: #ededed;
+
+  /* Tailwind 색상 변수 오버라이드 — 순수 검정 → 진회색 계열 */
+  --color-black: #1a1a1a;
+  --color-zinc-950: #1a1a1a;
+  --color-zinc-900: #212121;
+  --color-zinc-800: #2a2a2a;
+  --color-zinc-700: #3a3a3a;
 }
 
 body {

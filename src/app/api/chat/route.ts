@@ -121,11 +121,9 @@ const MODEL_CONFIG: Record<(typeof ALLOWED_MODELS)[number], ModelConfig> = {
     thinkingBudget: null,
     thinkingLevel: "low",
     systemSuffix: `
-Output Length Guidelines:
-- Write each response in approximately 1,500 to 2,000 Korean characters.
-- Never repeat descriptions, actions, or expressions already used in the same response.
-- Avoid padding or filler content. Every sentence must advance the scene or reveal character.
-- Do not summarize or restate what just happened. Move the story forward.
+Output in Korean. Target length: 1,500~2,000 characters.
+No repetition. No summary. Advance the scene forward.
+Respond immediately without excessive internal reasoning.
 `,
   },
 };
@@ -697,13 +695,19 @@ export async function POST(request: NextRequest) {
     let streamResult: Awaited<ReturnType<typeof geminiModel.generateContentStream>>;
 
     try {
-      streamResult = await geminiModel.generateContentStream({
-        contents: conversationParts.map((entry) => ({
-          role: entry.role,
-          parts: [{ text: entry.content }],
-        })),
-      });
+      streamResult = await geminiModel.generateContentStream(
+        {
+          contents: conversationParts.map((entry) => ({
+            role: entry.role,
+            parts: [{ text: entry.content }],
+          })),
+        },
+        { signal: request.signal }
+      );
     } catch (sdkError) {
+      if (request.signal.aborted) {
+        return new Response(null, { status: 499 });
+      }
       console.error("Gemini API error:", sdkError);
       return NextResponse.json(
         { error: "Failed to reach the AI server. Please try again." },
@@ -719,6 +723,7 @@ export async function POST(request: NextRequest) {
 
         try {
           for await (const chunk of streamResult.stream) {
+            if (request.signal.aborted) break;
             const text = chunk.text();
             if (!text) continue;
 

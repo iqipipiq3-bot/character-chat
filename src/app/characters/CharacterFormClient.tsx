@@ -515,11 +515,12 @@ export function CharacterFormClient({ mode, characterId, initialData }: Props) {
       // ── 1. 썸네일 업로드 ──────────────────────────────────────────────────
       let finalThumbUrl = thumbUrl;
       if (thumbFile) {
-        const webpFile = await convertToWebP(thumbFile);
-        const path = `${user.id}/${webpFile.name}`;
+        const skipConvert = thumbFile.type === "image/gif" || thumbFile.type === "image/webp";
+        const uploadFile = skipConvert ? thumbFile : await convertToWebP(thumbFile);
+        const path = `${user.id}/${uploadFile.name}`;
         const { error: upErr } = await supabase.storage
           .from("character-thumbnails")
-          .upload(path, webpFile, { upsert: true });
+          .upload(path, uploadFile, { upsert: true });
         if (upErr) throw upErr;
         finalThumbUrl = supabase.storage.from("character-thumbnails").getPublicUrl(path).data.publicUrl;
       }
@@ -778,7 +779,7 @@ export function CharacterFormClient({ mode, characterId, initialData }: Props) {
                   </div>
                   <div className="text-xs text-zinc-500 dark:text-zinc-400">
                     <p>클릭하여 이미지를 업로드하세요.</p>
-                    <p className="mt-1">JPG, PNG, WEBP (최대 5MB)</p>
+                    <p className="mt-1">JPG, PNG, WEBP, GIF (최대 5MB)</p>
                     {displayThumb ? (
                       <button
                         type="button"
@@ -798,7 +799,7 @@ export function CharacterFormClient({ mode, characterId, initialData }: Props) {
                 <input
                   ref={thumbInputRef}
                   type="file"
-                  accept="image/*"
+                  accept="image/jpeg,image/png,image/webp,image/gif"
                   className="hidden"
                   onChange={handleThumbChange}
                 />

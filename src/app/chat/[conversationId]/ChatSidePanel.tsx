@@ -15,6 +15,7 @@ export type FontSettings = {
   userFontColor: string;
   aiFontColor: string;
   fontSize: number;
+  chatBg: string;
 };
 
 export const DEFAULT_AI_BUBBLE_BG = "#F4F4F2";
@@ -25,7 +26,23 @@ export const DEFAULT_FONT_SETTINGS: FontSettings = {
   userFontColor: "#1A1A1A",
   aiFontColor: "#1A1A1A",
   fontSize: 16,
+  chatBg: "#F8F8F8",
 };
+
+const BG_PRESETS: { color: string; label: string }[] = [
+  { color: "#F8F8F8", label: "기본" },
+  { color: "#FFFFFF", label: "흰색" },
+  { color: "#F0F0F0", label: "연회색" },
+  { color: "#808080", label: "진회색" },
+  { color: "#1C1C1C", label: "검정" },
+  { color: "#FAFAF0", label: "아이보리" },
+  { color: "#F5F0E8", label: "베이지" },
+  { color: "#C8A882", label: "연갈색" },
+  { color: "#FFE0E0", label: "연분홍" },
+  { color: "#EFE0FF", label: "연보라" },
+  { color: "#E0EEFF", label: "연파랑" },
+  { color: "#E0F0E0", label: "연초록" },
+];
 
 type Props = {
   open: boolean;
@@ -113,7 +130,7 @@ export function ChatSidePanel({
                   : "text-[#888888] hover:text-[#1A1A1A]"
               }`}
             >
-              {t === "persona" ? "페르소나" : t === "note" ? "유저 노트" : "글꼴"}
+              {t === "persona" ? "페르소나" : t === "note" ? "유저 노트" : "커스텀"}
             </button>
           ))}
         </div>
@@ -209,9 +226,61 @@ export function ChatSidePanel({
             </div>
           )}
 
-          {/* ── 글꼴 탭 ── */}
+          {/* ── 커스텀 탭 ── */}
           {tab === "font" && (
             <div className="space-y-5">
+              {/* 배경 색상 */}
+              <div>
+                <p className="mb-2 text-xs font-semibold text-[#666666]">배경 색상</p>
+                <div className="grid grid-cols-6 gap-1.5">
+                  {BG_PRESETS.map(({ color, label }) => {
+                    const isSelected = fontSettings.chatBg === color;
+                    return (
+                      <button
+                        key={color}
+                        type="button"
+                        title={label}
+                        onClick={() => onFontSettingsChange({ ...fontSettings, chatBg: color })}
+                        className="relative flex h-8 w-full items-center justify-center rounded-md border transition-all"
+                        style={{
+                          backgroundColor: color,
+                          borderColor: isSelected ? "#1A1A2E" : "#D0D0D0",
+                          boxShadow: isSelected ? "0 0 0 2px #1A1A2E" : undefined,
+                        }}
+                      >
+                        {isSelected && (
+                          <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                            <path
+                              d="M2 6l3 3 5-5"
+                              stroke={color === "#1C1C1C" ? "#FFFFFF" : "#1A1A2E"}
+                              strokeWidth="1.8"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            />
+                          </svg>
+                        )}
+                      </button>
+                    );
+                  })}
+                  {/* 커스텀 color picker */}
+                  <label
+                    title="커스텀"
+                    className="relative flex h-8 w-full cursor-pointer items-center justify-center overflow-hidden rounded-md border border-dashed border-[#D0D0D0] bg-white hover:border-[#888888]"
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#888888" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <circle cx="12" cy="12" r="10" />
+                      <path d="M12 8v8M8 12h8" />
+                    </svg>
+                    <input
+                      type="color"
+                      value={fontSettings.chatBg}
+                      onChange={(e) => onFontSettingsChange({ ...fontSettings, chatBg: e.target.value })}
+                      className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+                    />
+                  </label>
+                </div>
+              </div>
+
               {/* 폰트 크기 */}
               <div>
                 <div className="mb-1.5 flex items-center justify-between">
