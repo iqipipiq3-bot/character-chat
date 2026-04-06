@@ -651,15 +651,34 @@ export async function POST(request: NextRequest) {
     console.log("[system-prompt] 히스토리 턴 수:", sortedHistory.length, "턴");
     console.log("[system-prompt] 전문:\n", finalSystemPrompt);
 
+    const contentsForStream = conversationParts.map((entry) => ({
+      role: entry.role,
+      parts: [{ text: entry.content }],
+    }));
+
+    console.log("[gemini-request] model:", modelId);
+    console.log("[gemini-request] config:", JSON.stringify(genConfig, null, 2));
+    console.log("[gemini-request] contents 턴 수:", contentsForStream.length);
+    console.log("[gemini-request] contents 구조:", JSON.stringify(
+      contentsForStream.map((c) => ({
+        role: c.role,
+        partCount: c.parts.length,
+        textLength: c.parts[0]?.text?.length ?? 0,
+        textPreview: c.parts[0]?.text?.slice(0, 80),
+      })),
+      null, 2
+    ));
+    console.log("[gemini-request] thinkingConfig:", JSON.stringify((genConfig as Record<string, unknown>).thinkingConfig ?? "없음"));
+    console.log("[gemini-request] systemInstruction 타입:", typeof (genConfig as Record<string, unknown>).systemInstruction, "/ 길이:", ((genConfig as Record<string, unknown>).systemInstruction as string | undefined)?.length ?? 0);
+    console.log("[gemini-request] cachedContent:", (genConfig as Record<string, unknown>).cachedContent ?? "없음");
+    console.log("[gemini-request] safetySettings:", JSON.stringify((genConfig as Record<string, unknown>).safetySettings));
+
     let streamResult: Awaited<ReturnType<typeof ai.models.generateContentStream>>;
 
     try {
       streamResult = await ai.models.generateContentStream({
         model: modelId,
-        contents: conversationParts.map((entry) => ({
-          role: entry.role,
-          parts: [{ text: entry.content }],
-        })),
+        contents: contentsForStream,
         config: genConfig as Parameters<typeof ai.models.generateContentStream>[0]["config"],
       });
     } catch (sdkError) {
