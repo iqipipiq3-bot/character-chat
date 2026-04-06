@@ -106,7 +106,7 @@ const MODEL_CONFIG: Record<(typeof ALLOWED_MODELS)[number], ModelConfig> = {
     thinkingBudget: null,
     thinkingLevel: "low",
     systemSuffix: `
-Output in Korean. Target length: 1,500~2,000 characters.
+Output in Korean.
 No repetition. No summary. Advance the scene forward.
 Respond immediately without excessive internal reasoning.
 `,
@@ -798,6 +798,18 @@ export async function POST(request: NextRequest) {
             const turnStart = currentTurnCount - 4;
             const turnRangeLabel = `${turnStart}-${currentTurnCount}`;
 
+            // 중복 트리거 방지: 해당 turn_range 기억이 이미 존재하면 추출 스킵
+            const { data: existingTurnMemory } = await supabase
+              .from("conversation_memories")
+              .select("id")
+              .eq("conversation_id", conversationId)
+              .eq("memory_type", "timeline")
+              .eq("turn_range", turnRangeLabel)
+              .maybeSingle();
+            if (existingTurnMemory) {
+              console.log("[api/chat] 기억 추출 스킵: 이미 존재하는 turn_range", turnRangeLabel);
+            } else {
+
             const turnText = [
               `[현재 턴 구간: ${turnRangeLabel}]`,
               `유저: ${message}`,
@@ -851,25 +863,13 @@ export async function POST(request: NextRequest) {
 
               let savedCount = 0;
               for (const m of filtered) {
-                // timeline: 동일 turn_range 중복 스킵
-                if (m.type === "timeline" && m.turn_range) {
-                  const { data: existing } = await supabase
-                    .from("conversation_memories")
-                    .select("id")
-                    .eq("conversation_id", conversationId)
-                    .eq("type", "timeline")
-                    .eq("turn_range", m.turn_range)
-                    .maybeSingle();
-                  if (existing) continue;
-                }
-
                 // relationship: 기존 비활성화
                 if (m.type === "relationship") {
                   await supabase
                     .from("conversation_memories")
                     .update({ is_active: false })
                     .eq("conversation_id", conversationId)
-                    .eq("type", "relationship")
+                    .eq("memory_type", "relationship")
                     .eq("is_active", true);
                 }
 
@@ -894,6 +894,7 @@ export async function POST(request: NextRequest) {
               }
               console.log("[api/chat] 기억 저장 완료:", savedCount + "개");
             }
+            } // end else (existingTurnMemory 없음)
           } catch (memErr) {
             console.error("[api/chat] 기억 추출 실패 (무시):", memErr);
           } // end if (currentTurnCount % 5 === 0)
