@@ -355,6 +355,24 @@ export function ConversationSidebar() {
     }
   }
 
+  async function handleBulkDelete() {
+    const ids = [...selectedConvoIds];
+    if (ids.length === 0) return;
+    const ok = window.confirm(`선택한 ${ids.length}개의 채팅방을 삭제할까요? 모든 메시지가 함께 삭제됩니다.`);
+    if (!ok) return;
+    try {
+      const supabase = createSupabaseBrowserClient();
+      await supabase.from("messages").delete().in("conversation_id", ids);
+      const { error } = await supabase.from("conversations").delete().in("id", ids);
+      if (error) throw error;
+      setConversations((prev) => prev.filter((c) => !ids.includes(c.id)));
+      setSelectedConvoIds(new Set());
+      setSelectionMode(false);
+    } catch (err) {
+      window.alert(err instanceof Error ? err.message : "삭제 중 오류가 발생했습니다.");
+    }
+  }
+
   async function handleCopy(convo: Conversation) {
     setActionId(convo.id);
     try {
@@ -536,18 +554,87 @@ export function ConversationSidebar() {
           <div className="absolute inset-0 z-10" onClick={closeMenus} />
         )}
 
-        {/* 헤더 */}
-        <div className="flex shrink-0 items-center justify-between border-b border-zinc-200 px-4 py-3 dark:border-zinc-800">
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-semibold">채팅방</span>
-            {conversations.length > 0 && (
-              <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[11px] text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400">
-                {conversations.length}
+        {/* 헤더 — 편집 모드 시 액션 바로 대체 */}
+        {selectionMode ? (
+          <div className="shrink-0 border-b border-zinc-200 bg-blue-50 dark:border-zinc-800 dark:bg-blue-950/20">
+            {/* 1행: 전체 선택 체크박스 + 선택 개수 */}
+            <div className="flex items-center gap-2.5 px-4 py-3">
+              <button
+                type="button"
+                onClick={() => {
+                  if (selectedConvoIds.size === conversations.length) {
+                    setSelectedConvoIds(new Set());
+                  } else {
+                    selectAll();
+                  }
+                }}
+                className="flex items-center gap-2"
+              >
+                <div className={`h-4 w-4 rounded border-2 flex shrink-0 items-center justify-center transition-colors ${selectedConvoIds.size === conversations.length && conversations.length > 0 ? "border-blue-500 bg-blue-500" : selectedConvoIds.size > 0 ? "border-blue-400 bg-blue-100 dark:bg-blue-900/40" : "border-zinc-300 dark:border-zinc-600"}`}>
+                  {selectedConvoIds.size === conversations.length && conversations.length > 0 ? (
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round">
+                      <polyline points="20 6 9 17 4 12" />
+                    </svg>
+                  ) : selectedConvoIds.size > 0 ? (
+                    <div className="h-1.5 w-1.5 rounded-sm bg-blue-500" />
+                  ) : null}
+                </div>
+                <span className="text-xs font-medium text-zinc-700 dark:text-zinc-300">전체 선택</span>
+              </button>
+              <span className="text-xs text-zinc-500 dark:text-zinc-400">
+                {selectedConvoIds.size > 0 ? `${selectedConvoIds.size}개 선택됨` : ""}
               </span>
-            )}
+            </div>
+
+            {/* 2행: 폴더 이동 + 삭제 + 취소 */}
+            <div className="flex items-center gap-2 px-4 pb-3">
+              {folders.length > 0 && (
+                <select
+                  disabled={selectedConvoIds.size === 0}
+                  className="min-w-0 flex-1 cursor-pointer rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-xs text-zinc-700 disabled:cursor-not-allowed disabled:opacity-40 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-300"
+                  defaultValue=""
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    if (!val) return;
+                    e.target.value = "";
+                    void handleMoveToFolder([...selectedConvoIds], val === "none" ? null : val);
+                  }}
+                >
+                  <option value="" disabled>폴더로 이동</option>
+                  <option value="none">미지정</option>
+                  {folders.map((f) => (
+                    <option key={f.id} value={f.id}>{f.name}</option>
+                  ))}
+                </select>
+              )}
+              <button
+                type="button"
+                disabled={selectedConvoIds.size === 0}
+                onClick={() => void handleBulkDelete()}
+                className="shrink-0 rounded-md bg-red-500 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                삭제
+              </button>
+              <button
+                type="button"
+                onClick={toggleSelectionMode}
+                className="shrink-0 rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-xs font-medium text-zinc-600 hover:bg-zinc-50 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800"
+              >
+                취소
+              </button>
+            </div>
           </div>
-          <div className="flex items-center gap-1">
-            {!selectionMode && (
+        ) : (
+          <div className="flex shrink-0 items-center justify-between border-b border-zinc-200 px-4 py-3 dark:border-zinc-800">
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-semibold">채팅방</span>
+              {conversations.length > 0 && (
+                <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[11px] text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400">
+                  {conversations.length}
+                </span>
+              )}
+            </div>
+            <div className="flex items-center gap-1">
               <button
                 type="button"
                 onClick={() => { setCreatingFolder(true); setNewFolderName(""); }}
@@ -555,51 +642,13 @@ export function ConversationSidebar() {
               >
                 + 폴더
               </button>
-            )}
-            <button
-              type="button"
-              onClick={toggleSelectionMode}
-              className={`rounded px-2 py-1 text-[11px] hover:bg-zinc-100 dark:hover:bg-zinc-800 ${selectionMode ? "font-semibold text-blue-600 dark:text-blue-400" : "text-zinc-500"}`}
-            >
-              {selectionMode ? "취소" : "선택"}
-            </button>
-          </div>
-        </div>
-
-        {/* 선택 모드 액션 바 */}
-        {selectionMode && (
-          <div className="flex shrink-0 items-center justify-between border-b border-zinc-100 bg-blue-50 px-3 py-2 text-xs dark:border-zinc-800 dark:bg-blue-950/20">
-            <span className="text-zinc-600 dark:text-zinc-400">
-              {selectedConvoIds.size > 0 ? `${selectedConvoIds.size}개 선택됨` : "항목을 선택하세요"}
-            </span>
-            <div className="flex items-center gap-2">
               <button
                 type="button"
-                onClick={selectAll}
-                className="text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100"
+                onClick={toggleSelectionMode}
+                className="rounded px-2 py-1 text-[11px] text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800"
               >
-                전체
+                편집
               </button>
-              {selectedConvoIds.size > 0 && folders.length > 0 && (
-                <div className="relative">
-                  <select
-                    className="cursor-pointer rounded border border-zinc-300 bg-white px-1.5 py-0.5 text-[11px] text-zinc-700 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300"
-                    defaultValue=""
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      if (!val) return;
-                      e.target.value = "";
-                      void handleMoveToFolder([...selectedConvoIds], val === "none" ? null : val);
-                    }}
-                  >
-                    <option value="" disabled>폴더로 이동</option>
-                    <option value="none">미지정</option>
-                    {folders.map((f) => (
-                      <option key={f.id} value={f.id}>{f.name}</option>
-                    ))}
-                  </select>
-                </div>
-              )}
             </div>
           </div>
         )}

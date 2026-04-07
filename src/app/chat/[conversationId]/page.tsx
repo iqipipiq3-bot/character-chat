@@ -450,8 +450,6 @@ export default function ChatPage() {
   const inputTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const streamingReaderRef = useRef<ReadableStreamDefaultReader<Uint8Array> | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
-  const typingQueueRef = useRef<string[]>([]);
-  const isTypingRef = useRef(false);
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const [isUserScrolling, setIsUserScrolling] = useState(false);
 
@@ -497,7 +495,11 @@ export default function ChatPage() {
           });
           setMessages(fallbackSorted);
           requestAnimationFrame(() => {
-            bottomRef.current?.scrollIntoView({ behavior: "instant" });
+            if (fallbackSorted.length === 0) {
+              window.scrollTo({ top: 0, behavior: "instant" });
+            } else {
+              bottomRef.current?.scrollIntoView({ behavior: "instant" });
+            }
           });
           return;
         }
@@ -514,9 +516,13 @@ export default function ChatPage() {
         return 0;
       });
       setMessages(sorted);
-      // 최초 로드 완료 후 즉시 맨 아래로
+      // 최초 로드 완료 후 새 채팅이면 최상단, 기존 채팅이면 최하단
       requestAnimationFrame(() => {
-        bottomRef.current?.scrollIntoView({ behavior: "instant" });
+        if (sorted.length === 0) {
+          window.scrollTo({ top: 0, behavior: "instant" });
+        } else {
+          bottomRef.current?.scrollIntoView({ behavior: "instant" });
+        }
       });
     }
 
@@ -616,8 +622,6 @@ export default function ChatPage() {
   async function handleStop() {
     abortControllerRef.current?.abort();
     abortControllerRef.current = null;
-    typingQueueRef.current = [];
-    isTypingRef.current = false;
     if (streamingReaderRef.current) {
       try { await streamingReaderRef.current.cancel(); } catch { /* ignore */ }
       streamingReaderRef.current = null;
@@ -688,37 +692,6 @@ export default function ChatPage() {
       let buffer = "";
       let firstChunk = true;
 
-      // 타이핑 큐 초기화
-      typingQueueRef.current = [];
-      isTypingRef.current = false;
-
-      // 글자 하나씩 타이핑 — 마지막 assistant 메시지에 추가
-      async function processQueue() {
-        if (isTypingRef.current) return;
-        isTypingRef.current = true;
-        while (typingQueueRef.current.length > 0) {
-          const char = typingQueueRef.current.shift()!;
-          setMessages((prev) => {
-            const updated = [...prev];
-            for (let i = updated.length - 1; i >= 0; i--) {
-              if (updated[i].role === "assistant") {
-                updated[i] = { ...updated[i], content: updated[i].content + char };
-                break;
-              }
-            }
-            return updated;
-          });
-          await new Promise<void>((resolve) => setTimeout(resolve, 8));
-        }
-        isTypingRef.current = false;
-      }
-
-      async function waitForTypingToFinish() {
-        while (isTypingRef.current || typingQueueRef.current.length > 0) {
-          await new Promise<void>((resolve) => setTimeout(resolve, 10));
-        }
-      }
-
       function handleStreamPayload(jsonStr: string) {
         if (!jsonStr) return;
 
@@ -753,8 +726,16 @@ export default function ChatPage() {
             ));
           }
 
-          typingQueueRef.current.push(...data.text.split(""));
-          void processQueue();
+          setMessages((prev) => {
+            const updated = [...prev];
+            for (let i = updated.length - 1; i >= 0; i--) {
+              if (updated[i].role === "assistant") {
+                updated[i] = { ...updated[i], content: updated[i].content + data.text };
+                break;
+              }
+            }
+            return updated;
+          });
         } catch {
           // ignore malformed SSE payloads
         }
@@ -777,27 +758,6 @@ export default function ChatPage() {
 
         for (const eventChunk of events) {
           handleSseEvent(eventChunk);
-          const jsonStr = "";
-          continue;
-          try {
-            const data = JSON.parse(jsonStr) as { text?: string; done?: boolean; error?: string };
-            if (data.error) {
-              setError(data.error ?? null);
-            }
-            if (data.text) {
-              if (firstChunk) {
-                firstChunk = false;
-                // loading 메시지 → assistant 메시지로 교체 (원자적 업데이트)
-                setMessages((prev) => prev.map((m) =>
-                  m.id === loadingTempId
-                    ? { id: assistantTempId, role: "assistant" as const, content: "", created_at: new Date().toISOString(), model: selectedModel }
-                    : m
-                ));
-              }
-              typingQueueRef.current.push(...(data.text ?? "").split(""));
-              void processQueue();
-            }
-          } catch { /* ignore */ }
         }
       }
 
@@ -806,8 +766,6 @@ export default function ChatPage() {
       for (const eventChunk of remainingEvents) {
         handleSseEvent(eventChunk);
       }
-
-      await waitForTypingToFinish();
     } catch (err) {
       if (err instanceof Error && err.name === "AbortError") return;
       const msg = err instanceof Error ? err.message : "네트워크 오류가 발생했습니다.";
@@ -852,7 +810,7 @@ export default function ChatPage() {
           </button>
         </div>
       )}
-      <main className="mx-auto flex w-full max-w-7xl flex-col px-3 md:px-4">
+      <main className="mx-auto flex w-full max-w-4xl flex-col px-3 md:px-4">
         {/* ── 헤더 ── */}
         <div className="sticky top-14 md:top-12 z-40 mb-2 md:mb-4 flex items-center justify-between gap-2 py-2 md:py-4" style={{ backgroundColor: fontSettings.chatBg || "#F8F8F8" }}>
           {/* 좌: 뒤로가기 */}
@@ -1124,7 +1082,7 @@ export default function ChatPage() {
           className="fixed bottom-0 left-0 right-0 z-40 px-3 pb-2 pt-2 md:px-4 md:pb-3 md:pt-2"
           style={{ backgroundColor: fontSettings.chatBg || "#F8F8F8", paddingBottom: "max(0.5rem, env(safe-area-inset-bottom))" }}
         >
-          <div className="mx-auto w-full max-w-7xl">
+          <div className="mx-auto w-full max-w-4xl">
             {/* 통합 입력 박스 */}
             <div className="rounded-2xl border border-zinc-200 bg-white px-3 pt-3 pb-2 dark:border-zinc-700 dark:bg-zinc-800">
               <textarea
@@ -1148,11 +1106,26 @@ export default function ChatPage() {
                 }}
                 disabled={loading}
                 style={{ height: "auto", maxHeight: "200px", overflowY: "hidden" }}
-                className="w-full resize-none border-0 bg-transparent text-sm text-[#1A1A1A] outline-none placeholder:text-zinc-400 disabled:opacity-60 dark:text-zinc-100 dark:placeholder:text-zinc-500"
+                className="w-full resize-none border-0 bg-transparent text-base md:text-sm text-[#1A1A1A] outline-none placeholder:text-zinc-400 disabled:opacity-60 dark:text-zinc-100 dark:placeholder:text-zinc-500"
                 placeholder="메시지를 입력하세요..."
               />
               {/* 하단 버튼 행 */}
-              <div className="mt-2 flex justify-end">
+              <div className="mt-2 flex items-center justify-between">
+                {/* 최하단 이동 버튼 — 위로 스크롤했을 때만 표시 */}
+                {isUserScrolling ? (
+                  <button
+                    type="button"
+                    onClick={() => bottomRef.current?.scrollIntoView({ behavior: "smooth" })}
+                    className="flex h-9 w-9 items-center justify-center rounded-full bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-700 dark:hover:bg-zinc-600"
+                    aria-label="최하단으로 이동"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-zinc-500 dark:text-zinc-300">
+                      <path d="M12 5v14M5 12l7 7 7-7" />
+                    </svg>
+                  </button>
+                ) : (
+                  <div />
+                )}
                 {loading ? (
                   <button
                     type="button"
