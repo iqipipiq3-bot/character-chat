@@ -1,6 +1,20 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import {
+  DndContext,
+  PointerSensor,
+  TouchSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  useSortable,
+  verticalListSortingStrategy,
+  arrayMove,
+} from "@dnd-kit/sortable";
 
 export type Memory = {
   id: string;
@@ -23,6 +37,7 @@ type Props = {
 };
 
 const CORE_CONCEPT_MAX = 5;
+const TIMELINE_MAX = 80;
 const CIRCLE_NUMBERS = ["①", "②", "③", "④", "⑤", "⑥", "⑦", "⑧", "⑨", "⑩"];
 
 function parseTurnStart(turnRange: string | null | undefined): number {
@@ -125,6 +140,33 @@ function RelationshipForm({
   );
 }
 
+// ── 툴팁 아이콘 ───────────────────────────────────────────────────────────────
+function TooltipIcon({ text }: { text: string }) {
+  const [visible, setVisible] = useState(false);
+
+  return (
+    <span className="relative inline-flex items-center">
+      <button
+        type="button"
+        className="flex h-4 w-4 items-center justify-center rounded-full bg-[#E8E8E8] text-[10px] font-bold leading-none text-[#AAAAAA] hover:bg-[#DDDDDD] hover:text-[#666666]"
+        onMouseEnter={() => setVisible(true)}
+        onMouseLeave={() => setVisible(false)}
+        onClick={(e) => { e.stopPropagation(); setVisible((v) => !v); }}
+        aria-label="도움말"
+      >
+        ?
+      </button>
+      {visible && (
+        <span className="absolute left-5 top-0 z-50 rounded-lg bg-[#1A1A1A] px-3 py-2 text-[11px] leading-relaxed text-white shadow-lg" style={{ width: "max-content", maxWidth: "220px", whiteSpace: "normal" }}>
+          {text.split("\n").map((line, i) => (
+            <span key={i} className="block">{line}</span>
+          ))}
+        </span>
+      )}
+    </span>
+  );
+}
+
 // ── 아이콘 ────────────────────────────────────────────────────────────────────
 function PencilIcon() {
   return (
@@ -147,6 +189,118 @@ function PlusIcon() {
     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className="h-3.5 w-3.5">
       <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
     </svg>
+  );
+}
+
+function GripIcon() {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-3.5 w-3.5">
+      <circle cx="7" cy="5" r="1.2" /><circle cx="13" cy="5" r="1.2" />
+      <circle cx="7" cy="10" r="1.2" /><circle cx="13" cy="10" r="1.2" />
+      <circle cx="7" cy="15" r="1.2" /><circle cx="13" cy="15" r="1.2" />
+    </svg>
+  );
+}
+
+// ── 드래그 가능한 타임라인 아이템 ────────────────────────────────────────────
+type SortableTimelineItemProps = {
+  m: Memory;
+  circle: string;
+  editingId: string | null;
+  setEditingId: (id: string | null) => void;
+  deletingId: string | null;
+  handleDelete: (id: string) => Promise<void>;
+  handleSaveEdit: (id: string, content: string) => Promise<void>;
+};
+
+function SortableTimelineItem({
+  m,
+  circle,
+  editingId,
+  setEditingId,
+  deletingId,
+  handleDelete,
+  handleSaveEdit,
+}: SortableTimelineItemProps) {
+  const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } =
+    useSortable({ id: m.id });
+
+  const style: React.CSSProperties = {
+    transform: transform
+      ? `translate3d(${transform.x}px, ${transform.y}px, 0)`
+      : undefined,
+    transition,
+    opacity: isDragging ? 0.4 : 1,
+    position: "relative",
+    zIndex: isDragging ? 50 : undefined,
+  };
+
+  const parts = m.content.split("|").map((s) => s.trim());
+  const turnRange = parts[0] ?? null;
+  const rpDate = parts[1] ?? null;
+  const titleText = parts.length >= 4 ? parts[2] : null;
+  const eventContent = parts.length >= 4 ? parts.slice(3).join(" | ") : (parts[2] ?? m.content);
+
+  const turnLabel = turnRange ? turnRange.replace("-", "~") + "턴" : null;
+  const metaParts = [
+    rpDate && rpDate !== "알 수 없음" ? rpDate : null,
+    turnLabel,
+  ].filter(Boolean);
+  const metaLine = metaParts.join(" · ");
+
+  return (
+    <li ref={setNodeRef} style={style} className="py-2.5">
+      {editingId === m.id ? (
+        <TimelineEditForm
+          initialValue={m.content}
+          onSave={(content) => handleSaveEdit(m.id, content)}
+          onCancel={() => setEditingId(null)}
+        />
+      ) : (
+        <div className="flex items-start gap-1.5">
+          {/* 드래그 핸들 */}
+          <button
+            ref={setActivatorNodeRef}
+            {...attributes}
+            {...listeners}
+            type="button"
+            className="mt-0.5 flex h-6 w-5 shrink-0 cursor-grab items-center justify-center rounded text-[#CCCCCC] hover:text-[#888888] active:cursor-grabbing"
+            aria-label="순서 변경"
+          >
+            <GripIcon />
+          </button>
+          <span className="shrink-0 text-sm text-[#1A1A2E]">{circle}</span>
+          <div className="min-w-0 flex-1">
+            {metaLine && (
+              <p className="text-[10px] text-[#AAAAAA]">{metaLine}</p>
+            )}
+            {titleText && (
+              <p className="text-[11px] font-medium text-[#333333]">{titleText}</p>
+            )}
+            <p className="mt-0.5 text-[11px] leading-relaxed text-[#888888]">{eventContent}</p>
+          </div>
+          <div className="flex shrink-0 items-center gap-0.5 pt-0.5">
+            <button
+              type="button"
+              onClick={() => setEditingId(m.id)}
+              className="flex h-6 w-6 items-center justify-center rounded text-[#AAAAAA] hover:bg-[#EBEBEB] hover:text-[#555555]"
+              title="수정"
+            >
+              <PencilIcon />
+            </button>
+            <button
+              type="button"
+              disabled={deletingId === m.id}
+              onClick={() => void handleDelete(m.id)}
+              className="flex h-6 w-6 items-center justify-center rounded text-[#AAAAAA] hover:bg-red-50 hover:text-red-500 disabled:opacity-40"
+              title="삭제"
+            >
+              {deletingId === m.id ? <span className="text-[10px]">...</span> : <XIcon />}
+            </button>
+          </div>
+        </div>
+      )}
+    </li>
   );
 }
 
@@ -259,6 +413,93 @@ function InlineEditForm({ initialValue, onSave, onCancel }: InlineEditFormProps)
   );
 }
 
+// ── 타임라인 수정 폼 ───────────────────────────────────────────────────────────
+type TimelineEditFormProps = {
+  initialValue: string;
+  onSave: (content: string) => Promise<void>;
+  onCancel: () => void;
+};
+
+function TimelineEditForm({ initialValue, onSave, onCancel }: TimelineEditFormProps) {
+  const parts = initialValue.split("|").map((s) => s.trim());
+  const [turnRange, setTurnRange] = useState(parts[0] ?? "");
+  const [rpDate, setRpDate] = useState(parts[1] ?? "");
+  const [title, setTitle] = useState(parts.length >= 4 ? parts[2] : "");
+  const [body, setBody] = useState(parts.length >= 4 ? parts.slice(3).join(" | ") : (parts[2] ?? ""));
+  const [saving, setSaving] = useState(false);
+
+  async function handleSave() {
+    if (saving) return;
+    setSaving(true);
+    try {
+      const content = [turnRange.trim(), rpDate.trim(), title.trim(), body.trim()]
+        .join(" | ");
+      await onSave(content);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const inputCls = "rounded-lg border border-[#D0D0D0] bg-white px-2 py-1.5 text-xs text-[#1A1A1A] placeholder-[#BBBBBB] outline-none focus:border-[#1A1A2E]";
+
+  return (
+    <div className="space-y-1.5">
+      <div className="flex gap-1.5">
+        <input
+          type="text"
+          value={turnRange}
+          onChange={(e) => setTurnRange(e.target.value)}
+          placeholder="1-5"
+          maxLength={20}
+          className={`${inputCls} w-16 shrink-0`}
+        />
+        <input
+          type="text"
+          value={rpDate}
+          onChange={(e) => setRpDate(e.target.value)}
+          placeholder="날짜"
+          maxLength={50}
+          className={`${inputCls} w-28 shrink-0`}
+        />
+        <input
+          type="text"
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          placeholder="간단한 제목"
+          maxLength={50}
+          autoFocus
+          className={`${inputCls} min-w-0 flex-1`}
+        />
+      </div>
+      <textarea
+        value={body}
+        onChange={(e) => setBody(e.target.value)}
+        rows={3}
+        maxLength={300}
+        placeholder="사건 내용 입력..."
+        className="w-full resize-none rounded-lg border border-[#D0D0D0] bg-white px-3 py-2 text-xs text-[#1A1A1A] placeholder-[#BBBBBB] outline-none focus:border-[#1A1A2E]"
+      />
+      <div className="flex gap-1.5">
+        <button
+          type="button"
+          disabled={saving}
+          onClick={() => void handleSave()}
+          className="rounded-lg bg-[#1A1A2E] px-2.5 py-1 text-[11px] font-medium text-white disabled:opacity-50"
+        >
+          {saving ? "저장 중..." : "저장"}
+        </button>
+        <button
+          type="button"
+          onClick={onCancel}
+          className="rounded-lg border border-[#D0D0D0] px-2.5 py-1 text-[11px] text-[#888888] hover:bg-[#F5F5F5]"
+        >
+          취소
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ── 메인 컴포넌트 ─────────────────────────────────────────────────────────────
 export function MemoryPanel({ conversationId, characterId, characterName, isOpen, onClose }: Props) {
   const [memories, setMemories] = useState<Memory[]>([]);
@@ -268,6 +509,13 @@ export function MemoryPanel({ conversationId, characterId, characterName, isOpen
   const [editingId, setEditingId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [addingSection, setAddingSection] = useState<"core_concept" | "timeline" | "relationship" | null>(null);
+  const [timelineExpanded, setTimelineExpanded] = useState(false);
+  const [timelineOrder, setTimelineOrder] = useState<string[]>([]);
+
+  const dndSensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 5 } })
+  );
 
   const fetchMemories = useCallback(async () => {
     if (!conversationId) return;
@@ -291,6 +539,19 @@ export function MemoryPanel({ conversationId, characterId, characterName, isOpen
   useEffect(() => {
     if (isOpen && conversationId) void fetchMemories();
   }, [isOpen, conversationId, fetchMemories]);
+
+  // 메모리 변경 시 timelineOrder 동기화 (기존 순서 보존, 신규 추가분 뒤에 붙임)
+  useEffect(() => {
+    const timelineIds = memories
+      .filter((m) => m.memory_type === "timeline")
+      .sort((a, b) => b.importance - a.importance)
+      .map((m) => m.id);
+    setTimelineOrder((prev) => {
+      const prevValid = prev.filter((id) => timelineIds.includes(id));
+      const newIds = timelineIds.filter((id) => !prev.includes(id));
+      return [...prevValid, ...newIds];
+    });
+  }, [memories]);
 
   // ── API 액션 ────────────────────────────────────────────────────────────────
   async function handleAdd(type: string, content: string) {
@@ -333,11 +594,48 @@ export function MemoryPanel({ conversationId, characterId, characterName, isOpen
     }
   }
 
+  async function handleTimelineDragEnd(event: DragEndEvent) {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+
+    const oldIndex = timelineOrder.indexOf(active.id as string);
+    const newIndex = timelineOrder.indexOf(over.id as string);
+    if (oldIndex === -1 || newIndex === -1) return;
+
+    const newOrder = arrayMove(timelineOrder, oldIndex, newIndex);
+    setTimelineOrder(newOrder);
+
+    const total = newOrder.length;
+    // 로컬 memories 즉시 반영
+    setMemories((prev) =>
+      prev.map((m) => {
+        if (m.memory_type !== "timeline") return m;
+        const pos = newOrder.indexOf(m.id);
+        if (pos === -1) return m;
+        return { ...m, importance: total - pos };
+      })
+    );
+
+    // 서버에 병렬 저장
+    await Promise.all(
+      newOrder.map((id, pos) =>
+        fetch(`/api/memories/${conversationId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ memory_id: id, importance: total - pos }),
+        })
+      )
+    );
+  }
+
   // ── 데이터 분류 ──────────────────────────────────────────────────────────────
   const coreConcepts = memories.filter((m) => m.memory_type === "core_concept");
-  const timelines = memories
-    .filter((m) => m.memory_type === "timeline")
-    .sort((a, b) => parseTurnStart(a.turn_range) - parseTurnStart(b.turn_range));
+  const timelineMap = new Map(
+    memories.filter((m) => m.memory_type === "timeline").map((m) => [m.id, m])
+  );
+  const timelines = timelineOrder
+    .map((id) => timelineMap.get(id))
+    .filter((m): m is Memory => m !== undefined);
   // character_name 기준 최신 1개만 표시 (히스토리 허용, 표시는 최신만)
   const relationships = (() => {
     const all = memories
@@ -357,6 +655,7 @@ export function MemoryPanel({ conversationId, characterId, characterName, isOpen
   })();
 
   const coreConceptFull = coreConcepts.length >= CORE_CONCEPT_MAX;
+  const timelineFull = timelines.length >= TIMELINE_MAX;
 
   return (
     <>
@@ -407,7 +706,7 @@ export function MemoryPanel({ conversationId, characterId, characterName, isOpen
         </div>
 
         {/* 본문 */}
-        <div className="flex-1 overflow-y-auto">
+        <div className="flex-1 overflow-y-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
           {error && (
             <div className="mx-4 mt-4 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600">{error}</div>
           )}
@@ -424,6 +723,7 @@ export function MemoryPanel({ conversationId, characterId, characterName, isOpen
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-1.5">
                     <p className="text-[11px] font-semibold tracking-wide text-[#888888]">절대 기억</p>
+                    <TooltipIcon text={"이 롤플레이에서 절대 잊으면 안 되는 핵심 사건.\n연애 시작, 결혼, 죽음 등 서사의 전환점만 기록됩니다."} />
                     <span className="text-[10px] text-[#BBBBBB]">{coreConcepts.length}/{CORE_CONCEPT_MAX}</span>
                   </div>
                   <button
@@ -502,21 +802,21 @@ export function MemoryPanel({ conversationId, characterId, characterName, isOpen
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-1.5">
                     <p className="text-[11px] font-semibold tracking-wide text-[#888888]">사건 타임라인</p>
-                    {timelines.length > 0 && (
-                      <span className="rounded-full bg-[#EBEBEB] px-1.5 py-0.5 text-[10px] font-medium text-[#888888]">
-                        {timelines.length}
-                      </span>
-                    )}
+                    <TooltipIcon text={"턴별로 발생한 주요 사건 기록."} />
+                    <span className="text-[10px] text-[#BBBBBB]">{timelines.length}/{TIMELINE_MAX}</span>
                   </div>
                   <button
                     type="button"
-                    onClick={() => setAddingSection((v) => v === "timeline" ? null : "timeline")}
+                    disabled={timelineFull}
+                    onClick={() => !timelineFull && setAddingSection((v) => v === "timeline" ? null : "timeline")}
                     className={`flex h-5 w-5 items-center justify-center rounded transition-colors ${
-                      addingSection === "timeline"
-                        ? "bg-[#EBEBEB] text-[#555555]"
-                        : "text-[#AAAAAA] hover:bg-[#EBEBEB] hover:text-[#555555]"
+                      timelineFull
+                        ? "cursor-not-allowed text-[#DDDDDD]"
+                        : addingSection === "timeline"
+                          ? "bg-[#EBEBEB] text-[#555555]"
+                          : "text-[#AAAAAA] hover:bg-[#EBEBEB] hover:text-[#555555]"
                     }`}
-                    title="추가"
+                    title={timelineFull ? "최대 80개까지 저장 가능합니다" : "추가"}
                   >
                     <PlusIcon />
                   </button>
@@ -532,58 +832,57 @@ export function MemoryPanel({ conversationId, characterId, characterName, isOpen
 
                 {timelines.length === 0 && addingSection !== "timeline" ? (
                   <p className="mt-2 text-[11px] text-[#CCCCCC]">아직 기억이 없습니다.</p>
-                ) : (
-                  <ul className="mt-2 divide-y divide-[#F0F0F0]">
-                    {timelines.map((m, idx) => {
-                      const circle = CIRCLE_NUMBERS[idx] ?? `(${idx + 1})`;
-                      // content에서 날짜·사건 파싱: "[turn] | [date] | [사건]" 또는 그냥 전체
-                      const parts = m.content.split("|").map((s) => s.trim());
-                      const dateLabel = parts.length >= 2 ? parts[1] : null;
-                      const eventLabel = parts.length >= 3 ? parts.slice(2).join(" | ") : m.content;
+                ) : (() => {
+                    const PREVIEW = 5;
+                    const hasMore = timelines.length > PREVIEW;
+                    const visibleItems = timelineExpanded ? timelines : timelines.slice(0, PREVIEW);
+                    const hiddenCount = timelines.length - PREVIEW;
 
-                      return (
-                        <li key={m.id} className="py-2.5">
-                          {editingId === m.id ? (
-                            <InlineEditForm
-                              initialValue={m.content}
-                              onSave={(content) => handleSaveEdit(m.id, content)}
-                              onCancel={() => setEditingId(null)}
-                            />
-                          ) : (
-                            <div className="flex items-start gap-2">
-                              <span className="shrink-0 text-sm text-[#1A1A2E]">{circle}</span>
-                              <div className="min-w-0 flex-1">
-                                {dateLabel && dateLabel !== "알 수 없음" && (
-                                  <span className="text-[10px] text-[#AAAAAA]"> — {dateLabel} — </span>
-                                )}
-                                <span className="text-xs leading-relaxed text-[#333333]">{eventLabel}</span>
-                              </div>
-                              <div className="flex shrink-0 items-center gap-0.5 pt-0.5">
-                                <button
-                                  type="button"
-                                  onClick={() => setEditingId(m.id)}
-                                  className="flex h-6 w-6 items-center justify-center rounded text-[#AAAAAA] hover:bg-[#EBEBEB] hover:text-[#555555]"
-                                  title="수정"
-                                >
-                                  <PencilIcon />
-                                </button>
-                                <button
-                                  type="button"
-                                  disabled={deletingId === m.id}
-                                  onClick={() => void handleDelete(m.id)}
-                                  className="flex h-6 w-6 items-center justify-center rounded text-[#AAAAAA] hover:bg-red-50 hover:text-red-500 disabled:opacity-40"
-                                  title="삭제"
-                                >
-                                  {deletingId === m.id ? <span className="text-[10px]">...</span> : <XIcon />}
-                                </button>
-                              </div>
-                            </div>
-                          )}
-                        </li>
-                      );
-                    })}
-                  </ul>
-                )}
+                    return (
+                      <DndContext
+                        sensors={dndSensors}
+                        onDragEnd={(e) => void handleTimelineDragEnd(e)}
+                      >
+                        <SortableContext
+                          items={visibleItems.map((m) => m.id)}
+                          strategy={verticalListSortingStrategy}
+                        >
+                          <ul className="mt-2 divide-y divide-[#F0F0F0]">
+                            {visibleItems.map((m, visIdx) => {
+                              const globalIdx = timelineExpanded
+                                ? visIdx
+                                : timelines.length - PREVIEW + visIdx < 0
+                                  ? visIdx
+                                  : timelines.indexOf(m);
+                              const circle = CIRCLE_NUMBERS[globalIdx] ?? `(${globalIdx + 1})`;
+                              return (
+                                <SortableTimelineItem
+                                  key={m.id}
+                                  m={m}
+                                  circle={circle}
+                                  editingId={editingId}
+                                  setEditingId={setEditingId}
+                                  deletingId={deletingId}
+                                  handleDelete={handleDelete}
+                                  handleSaveEdit={handleSaveEdit}
+                                />
+                              );
+                            })}
+                          </ul>
+                        </SortableContext>
+                        {hasMore && (
+                          <button
+                            type="button"
+                            onClick={() => setTimelineExpanded((v) => !v)}
+                            className="mt-2 w-full text-center text-[11px] text-[#AAAAAA] hover:text-[#666666]"
+                          >
+                            {timelineExpanded ? "접기" : `더보기 (+${hiddenCount})`}
+                          </button>
+                        )}
+                      </DndContext>
+                    );
+                  })()
+                }
               </section>
 
               {/* ── 섹션 3: 캐릭터 관계도 ── */}
@@ -592,6 +891,7 @@ export function MemoryPanel({ conversationId, characterId, characterName, isOpen
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-1.5">
                     <p className="text-[11px] font-semibold tracking-wide text-[#888888]">캐릭터 관계도</p>
+                    <TooltipIcon text={"캐릭터와 유저의 현재 관계 상태.\n매 턴 자동으로 업데이트되며 항상 AI에게 전달됩니다."} />
                     {relationships.length > 0 && (
                       <span className="rounded-full bg-[#EBEBEB] px-1.5 py-0.5 text-[10px] font-medium text-[#888888]">
                         {relationships.length}

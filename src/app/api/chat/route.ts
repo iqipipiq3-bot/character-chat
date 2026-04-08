@@ -3,7 +3,35 @@ import { cookies } from "next/headers";
 import { createServerClient } from "@supabase/ssr";
 import { GoogleGenAI, ThinkingLevel } from "@google/genai";
 import { replaceVariables } from "../../lib/replaceVariables";
-import { buildMemoryPrompt } from "../../lib/memory/buildMemoryPrompt";
+import { buildMemoryPrompt, type ConversationMemory } from "../../lib/memory/buildMemoryPrompt";
+
+function filterMemoriesByKeyword(
+  memories: ConversationMemory[],
+  userMessage: string
+): ConversationMemory[] {
+  const words = userMessage
+    .split(/[\s,.!?'"·。、]+/)
+    .filter((w) => w.length >= 2);
+
+  const coreConcepts = memories.filter((m) => m.type === "core_concept");
+
+  const timelines = memories.filter((m) => m.type === "timeline");
+  const matchedTimelines = timelines
+    .filter((m) => words.some((w) => m.content.includes(w)))
+    .sort((a, b) => b.importance - a.importance)
+    .slice(0, 5);
+
+  const relationship = memories
+    .filter((m) => m.type === "relationship" && m.is_active)
+    .sort(
+      (a, b) =>
+        new Date(b.created_at ?? "").getTime() -
+        new Date(a.created_at ?? "").getTime()
+    )
+    .slice(0, 1);
+
+  return [...coreConcepts, ...matchedTimelines, ...relationship];
+}
 
 export const maxDuration = 120;
 
@@ -35,6 +63,8 @@ type PostBody = {
   model?: string;
   active_persona_id?: string;
   user_note?: string;
+  persona_content?: string;
+  persona_name?: string;
 };
 
 type ModelConfig = {
@@ -136,17 +166,36 @@ If nothing is worth extracting, output an empty array: []
 
 === TYPE DEFINITIONS ===
 
-1. core_concept (핵심 컨셉)
-   - Extract only the essential concepts of THIS roleplay session: setting, world background, initial meeting, key premises, character roles.
+1. core_concept (절대 기억)
+   - ONLY extract if it is a CRITICAL, IRREVERSIBLE event that fundamentally changes the relationship or story.
+   - Examples of VALID core_concept:
+     · 연애/사랑 고백이 받아들여져 연인 관계가 됨
+     · 결혼함
+     · 임신/아이가 생김
+     · 주요 인물의 죽음
+     · 유저가 빙의/환생/다른 세계로 이동함
+     · 캐릭터의 정체/비밀이 완전히 밝혀짐
+     · 돌이킬 수 없는 배신이나 결별
+   - Examples of INVALID core_concept (절대 추출 금지):
+     · 신체적 접촉이나 스킨십
+     · 성적 상호작용
+     · 일반적인 감정 표현
+     · 대화나 일상적 사건
+     · 관계의 분위기나 긴장감
    - Maximum 5 entries total across all time. If 5 already exist in the provided context, do NOT extract any core_concept this turn.
-   - Skip anything already captured in existing core_concept memories or anything not critically important.
    - Do NOT duplicate previously established concepts.
-   - importance: 5 (critical) or 4 (important)
+   - importance: 5 only
+   - If nothing in this conversation qualifies as a critical irreversible event,
+     output an empty array []. Do NOT force-extract core_concept entries.
+     It is perfectly acceptable to return [] for core_concept.
 
 2. timeline (사건 타임라인)
    - Extract at most 1 entry for this conversation window.
    - SKIP if there are no significant changes compared to previous turns (e.g. only small talk, no plot development).
-   - content format (Korean): "[turn_range] | [rp_date] | [사건 내용 간결하게 30자 이내]"
+   - content format (Korean): "[turn_range] | [rp_date] | [사건 내용 30자 이내]"
+   - 사건 내용에는 반드시 핵심 명사/키워드를 포함할 것. 나중에 해당 단어로 검색했을 때 이 기억이 떠오를 수 있도록.
+     예: '카페에서 첫 만남', '키스 후 고백', '전쟁터에서 재회'
+     → '카페', '키스', '전쟁터' 같은 구체적 명사가 content 안에 있어야 함.
    - rp_date: In-world date/time if mentioned, otherwise "알 수 없음".
    - turn_range: Use the turn range provided in the request (e.g. "1-5").
    - importance: 4 or 5
@@ -154,8 +203,12 @@ If nothing is worth extracting, output an empty array: []
 3. relationship (관계도)
    - Extract at most 1 entry.
    - SKIP if the relationship or emotional dynamic has not meaningfully changed since the previous turn.
-   - content format (Korean, use exactly this structure):
-     "유저와의 관계: [한 줄]\n유저를 향한 감정: [한 줄]"
+   - content format (Korean, use exactly this 4-line structure):
+     "character_name: [캐릭터 이름]
+캐릭터는 유저에게: [캐릭터가 유저에게 어떤 존재인지 한 줄]
+유저는 캐릭터에게: [유저가 캐릭터에게 어떤 존재인지 한 줄]
+유저를 향한 감정: [캐릭터가 유저에게 느끼는 감정 한 줄]"
+   - character_name은 반드시 대화 속 캐릭터 이름으로 채울 것. 절대 빈값이나 "—"로 두지 말 것.
    - importance: 3, 4, or 5
 
 === OUTPUT FORMAT ===
@@ -344,7 +397,7 @@ export async function POST(request: NextRequest) {
         .eq("user_id", user.id)
         .eq("is_active", true)
         .order("importance", { ascending: false })
-        .limit(20),
+        .limit(100),
     ]);
 
     console.log('[timing] DB Batch1:', Date.now() - t0, 'ms')
@@ -383,8 +436,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: historyError.message }, { status: 400 });
     }
 
-    const userPersona = (personaData?.content as string | null) ?? "";
-    let userName = (personaData?.name as string | null) || "User";
+    // 세션 페르소나가 있으면 DB 데이터 대신 사용
+    const userPersona = body.persona_content ?? (personaData?.content as string | null) ?? "";
+    let userName = (body.persona_name ?? (personaData?.name as string | null)) || "User";
 
     const userNote = body.user_note?.trim() ?? "";
 
@@ -474,7 +528,9 @@ export async function POST(request: NextRequest) {
       character.name
     );
 
-    const memoryBlock = buildMemoryPrompt(memoriesData ?? []);
+    const memoryBlock = buildMemoryPrompt(
+      filterMemoriesByKeyword(memoriesData ?? [], message)
+    );
 
     const conversationParts = sortedHistory.map((entry) => ({
       role: entry.role === "assistant" ? "model" : "user",
@@ -763,9 +819,10 @@ export async function POST(request: NextRequest) {
             }),
           ]);
 
-          // ── 기억 추출 (5번째 턴마다, 실패해도 응답에 영향 없음) ──────────
+          // ── 기억 추출 + 패션 업데이트 (5번째 턴마다) ────────────────────
+          let fashionUpdate: string | null = null;
           const currentTurnCount = (totalUserMsgCount ?? 0) + 1;
-          if (currentTurnCount % 5 === 0) try {
+          if (currentTurnCount % 5 === 0) { try {
             const turnStart = currentTurnCount - 4;
             const turnRangeLabel = `${turnStart}-${currentTurnCount}`;
 
@@ -858,6 +915,42 @@ export async function POST(request: NextRequest) {
             }
           } catch (memErr) {
             console.error("[api/chat] 기억 추출 실패 (무시):", memErr);
+          }
+
+          // ── 패션 동적 업데이트 (personaId 있을 때만) ──────────────────────
+          if (body.active_persona_id) {
+            try {
+              const recentMessages = [
+                ...sortedHistory.slice(-8).map((h) => ({ role: h.role, content: h.content })),
+                { role: "user", content: message },
+                { role: "assistant", content: finalReply },
+              ];
+              const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "";
+              const fashionRes = await fetch(`${siteUrl}/api/personas/dynamic-update`, {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                  Cookie: request.headers.get("cookie") ?? "",
+                },
+                body: JSON.stringify({
+                  personaId: body.active_persona_id,
+                  recentMessages,
+                }),
+              });
+              const fashionData = await fashionRes.json() as { updated?: boolean; fashion?: string };
+              if (fashionData.updated && fashionData.fashion) {
+                fashionUpdate = fashionData.fashion;
+              }
+            } catch {
+              // 조용히 실패
+            }
+          }
+          } // end if (currentTurnCount % 5 === 0)
+
+          if (fashionUpdate) {
+            controller.enqueue(
+              encoder.encode(`data: ${JSON.stringify({ fashionUpdate })}\n\n`)
+            );
           }
 
           controller.enqueue(
