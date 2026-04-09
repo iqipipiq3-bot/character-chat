@@ -728,6 +728,7 @@ export default function ChatPage() {
         try {
           const data = JSON.parse(jsonStr) as {
             text?: string;
+            thought?: boolean;
             done?: boolean;
             error?: string;
             freeBalance?: number;
@@ -753,7 +754,7 @@ export default function ChatPage() {
               ));
             }
           }
-          if (!data.text) return;
+          if (!data.text || data.thought) return;
 
           if (firstChunk) {
             firstChunk = false;

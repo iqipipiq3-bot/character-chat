@@ -700,11 +700,30 @@ export async function POST(request: NextRequest) {
 
           for await (const chunk of streamResult) {
             if (request.signal.aborted) break;
-            const text = chunk.text;
-            if (!text) continue;
 
-            fullReply += text;
-            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ text })}\n\n`));
+            const candidates = chunk.candidates;
+            if (candidates) {
+              for (const candidate of candidates) {
+                const parts = candidate.content?.parts as
+                  | Array<{ text?: string; thought?: boolean }>
+                  | undefined;
+                if (!parts) continue;
+                for (const part of parts) {
+                  if (!part.text) continue;
+                  if (part.thought) {
+                    controller.enqueue(
+                      encoder.encode(`data: ${JSON.stringify({ text: part.text, thought: true })}\n\n`)
+                    );
+                  } else {
+                    fullReply += part.text;
+                    controller.enqueue(
+                      encoder.encode(`data: ${JSON.stringify({ text: part.text })}\n\n`)
+                    );
+                  }
+                }
+              }
+            }
+
             if (chunk.usageMetadata) {
               usageMeta = chunk.usageMetadata as UsageMeta;
             }
@@ -866,7 +885,8 @@ export async function POST(request: NextRequest) {
             amount: -creditCost,
             credit_type: creditType,
             transaction_type: "chat_deduct",
-            description: `채팅 (${modelId})`,
+            description: `${character.name}와의 대화`,
+            character_name: character.name,
             reference_id: assistantMessageId,
           });
 
@@ -994,6 +1014,8 @@ export async function POST(request: NextRequest) {
     return new Response(readable, {
       headers: {
         "Content-Type": "text/event-stream",
+        "X-Content-Type-Options": "nosniff",
+        "X-Accel-Buffering": "no",
         "Cache-Control": "no-cache",
         Connection: "keep-alive",
       },

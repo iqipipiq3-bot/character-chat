@@ -16,6 +16,7 @@ export type CreditTransaction = {
   credit_type: string;
   transaction_type: string;
   description: string | null;
+  character_name: string | null;
   created_at: string;
 };
 
@@ -52,7 +53,7 @@ export default async function MypagePage() {
       .maybeSingle(),
     supabase
       .from("credit_transactions")
-      .select("id, amount, credit_type, transaction_type, description, created_at")
+      .select("id, amount, credit_type, transaction_type, description, character_name, created_at")
       .eq("user_id", user.id)
       .order("created_at", { ascending: false })
       .limit(10),

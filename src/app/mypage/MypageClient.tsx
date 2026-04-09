@@ -182,7 +182,9 @@ export function MypageClient({ email, initialNickname, freeBalance, paidBalance,
                           {new Date(tx.created_at).toLocaleDateString("ko-KR", { month: "2-digit", day: "2-digit" })}
                         </td>
                         <td className="px-3 py-3 text-zinc-600 dark:text-zinc-300">
-                          {tx.description ?? TX_LABELS[tx.transaction_type] ?? tx.transaction_type}
+                          {tx.transaction_type === "chat_deduct"
+                            ? (tx.character_name ? `${tx.character_name}와의 대화` : "채팅")
+                            : (TX_LABELS[tx.transaction_type] ?? tx.transaction_type)}
                         </td>
                         <td className={`whitespace-nowrap px-3 py-3 text-right font-semibold tabular-nums ${tx.amount > 0 ? "text-green-600 dark:text-green-400" : "text-zinc-500"}`}>
                           {tx.amount > 0 ? `+${tx.amount.toLocaleString()}` : tx.amount.toLocaleString()}
