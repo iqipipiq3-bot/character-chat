@@ -12,8 +12,8 @@ export type Persona = {
 export type FontSettings = {
   userBubbleBg: string;
   aiBubbleBg: string;
-  userFontColor: string;
-  aiFontColor: string;
+  textColor: string;
+  narrationColor: string;
   fontSize: number;
   chatBg: string;
 };
@@ -23,8 +23,8 @@ export const DEFAULT_AI_BUBBLE_BG = "#F4F4F2";
 export const DEFAULT_FONT_SETTINGS: FontSettings = {
   userBubbleBg: "#FFE0DB",
   aiBubbleBg: DEFAULT_AI_BUBBLE_BG,
-  userFontColor: "#1A1A1A",
-  aiFontColor: "#1A1A1A",
+  textColor: "#1A1A1A",
+  narrationColor: "#888888",
   fontSize: 16,
   chatBg: "#F8F8F8",
 };
@@ -303,12 +303,48 @@ export function ChatSidePanel({
                 </div>
               </div>
 
-              {/* 유저 말풍선 */}
+              {/* 글꼴 색상 */}
               <div className="space-y-2">
-                <p className="text-xs font-semibold text-[#666666]">유저 말풍선</p>
+                <p className="text-xs font-semibold text-[#666666]">글꼴 색상</p>
                 <div className="grid grid-cols-2 gap-2">
                   <label className="flex cursor-pointer items-center justify-between rounded-lg border border-[#E0E0E0] px-3 py-2 text-xs text-[#555555] hover:bg-[#F8F8F8]">
-                    배경색
+                    일반 텍스트
+                    <input
+                      type="color"
+                      value={fontSettings.textColor}
+                      onChange={(e) =>
+                        onFontSettingsChange({ ...fontSettings, textColor: e.target.value })
+                      }
+                      className="h-6 w-8 cursor-pointer rounded border-0 bg-transparent"
+                    />
+                  </label>
+                  <label className="flex cursor-pointer items-center justify-between rounded-lg border border-[#E0E0E0] px-3 py-2 text-xs text-[#555555] hover:bg-[#F8F8F8]">
+                    나레이션
+                    <input
+                      type="color"
+                      value={fontSettings.narrationColor}
+                      onChange={(e) =>
+                        onFontSettingsChange({ ...fontSettings, narrationColor: e.target.value })
+                      }
+                      className="h-6 w-8 cursor-pointer rounded border-0 bg-transparent"
+                    />
+                  </label>
+                </div>
+                {/* 미리보기 */}
+                <div className="rounded-lg border border-[#E0E0E0] bg-[#FAFAFA] px-3 py-2.5" style={{ fontSize: fontSettings.fontSize }}>
+                  <p style={{ color: fontSettings.textColor }}>&quot;안녕하세요.&quot;</p>
+                  <p style={{ color: fontSettings.narrationColor, fontStyle: "normal" }}>
+                    <em>*그가 천천히 고개를 들었다.*</em>
+                  </p>
+                </div>
+              </div>
+
+              {/* 말풍선 */}
+              <div className="space-y-2">
+                <p className="text-xs font-semibold text-[#666666]">말풍선</p>
+                <div className="grid grid-cols-2 gap-2">
+                  <label className="flex cursor-pointer items-center justify-between rounded-lg border border-[#E0E0E0] px-3 py-2 text-xs text-[#555555] hover:bg-[#F8F8F8]">
+                    유저 배경
                     <input
                       type="color"
                       value={fontSettings.userBubbleBg}
@@ -319,36 +355,7 @@ export function ChatSidePanel({
                     />
                   </label>
                   <label className="flex cursor-pointer items-center justify-between rounded-lg border border-[#E0E0E0] px-3 py-2 text-xs text-[#555555] hover:bg-[#F8F8F8]">
-                    글자색
-                    <input
-                      type="color"
-                      value={fontSettings.userFontColor}
-                      onChange={(e) =>
-                        onFontSettingsChange({ ...fontSettings, userFontColor: e.target.value })
-                      }
-                      className="h-6 w-8 cursor-pointer rounded border-0 bg-transparent"
-                    />
-                  </label>
-                </div>
-                {/* 미리보기 */}
-                <div
-                  className="rounded-2xl rounded-br-none px-3 py-2 text-sm"
-                  style={{
-                    backgroundColor: fontSettings.userBubbleBg,
-                    color: fontSettings.userFontColor,
-                    fontSize: fontSettings.fontSize,
-                  }}
-                >
-                  안녕하세요! (미리보기)
-                </div>
-              </div>
-
-              {/* AI 말풍선 */}
-              <div className="space-y-2">
-                <p className="text-xs font-semibold text-[#666666]">AI 말풍선</p>
-                <div className="grid grid-cols-2 gap-2">
-                  <label className="flex cursor-pointer items-center justify-between rounded-lg border border-[#E0E0E0] px-3 py-2 text-xs text-[#555555] hover:bg-[#F8F8F8]">
-                    배경색
+                    AI 배경
                     <input
                       type="color"
                       value={fontSettings.aiBubbleBg}
@@ -358,28 +365,31 @@ export function ChatSidePanel({
                       className="h-6 w-8 cursor-pointer rounded border-0 bg-transparent"
                     />
                   </label>
-                  <label className="flex cursor-pointer items-center justify-between rounded-lg border border-[#E0E0E0] px-3 py-2 text-xs text-[#555555] hover:bg-[#F8F8F8]">
-                    글자색
-                    <input
-                      type="color"
-                      value={fontSettings.aiFontColor}
-                      onChange={(e) =>
-                        onFontSettingsChange({ ...fontSettings, aiFontColor: e.target.value })
-                      }
-                      className="h-6 w-8 cursor-pointer rounded border-0 bg-transparent"
-                    />
-                  </label>
                 </div>
                 {/* 미리보기 */}
-                <div
-                  className="rounded-2xl rounded-bl-none border border-[#E0E0E0] px-3 py-2 text-sm"
-                  style={{
-                    backgroundColor: fontSettings.aiBubbleBg,
-                    color: fontSettings.aiFontColor,
-                    fontSize: fontSettings.fontSize,
-                  }}
-                >
-                  *그가 천천히 고개를 들었다.* &quot;안녕하세요.&quot; (미리보기)
+                <div className="space-y-2">
+                  <div
+                    className="ml-auto max-w-[85%] rounded-2xl rounded-br-none px-3 py-2"
+                    style={{
+                      backgroundColor: fontSettings.userBubbleBg,
+                      color: fontSettings.textColor,
+                      fontSize: fontSettings.fontSize,
+                    }}
+                  >
+                    안녕하세요! (미리보기)
+                  </div>
+                  <div
+                    className="max-w-[85%] rounded-2xl rounded-bl-none px-3 py-2"
+                    style={{
+                      backgroundColor: fontSettings.aiBubbleBg,
+                      fontSize: fontSettings.fontSize,
+                    }}
+                  >
+                    <span style={{ color: fontSettings.narrationColor, fontStyle: "normal" }}>
+                      <em>*그가 천천히 고개를 들었다.*</em>
+                    </span>{" "}
+                    <span style={{ color: fontSettings.textColor }}>&quot;안녕하세요.&quot;</span>
+                  </div>
                 </div>
               </div>
 

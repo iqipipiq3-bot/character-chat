@@ -12,10 +12,14 @@ function getSupabaseEnv() {
   return { url, anonKey };
 }
 
-function getGeminiApiKey() {
-  const key = process.env.GEMINI_API_KEY;
-  if (!key) throw new Error("GEMINI_API_KEY is not set.");
-  return key;
+function getAI() {
+  const credentials = JSON.parse(process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON!);
+  return new GoogleGenAI({
+    vertexai: true,
+    project: process.env.GOOGLE_CLOUD_PROJECT_ID!,
+    location: process.env.GOOGLE_CLOUD_LOCATION!,
+    googleAuthOptions: { credentials },
+  });
 }
 
 type Message = {
@@ -122,10 +126,10 @@ export async function POST(request: NextRequest) {
     ].join("\n");
 
     // ── Gemini 기억 추출 요청 ──────────────────────────────────────────────
-    const ai = new GoogleGenAI({ apiKey: getGeminiApiKey() });
+    const ai = getAI();
     const result = await ai.models.generateContent({
       model: "gemini-3.1-flash-lite-preview",
-      contents: [{ role: "user", parts: [{ text: conversationText }] }],
+      contents: conversationText,
       config: {
         systemInstruction: SYSTEM_PROMPT,
         temperature: 0.3,

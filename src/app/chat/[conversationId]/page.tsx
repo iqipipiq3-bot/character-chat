@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { createSupabaseBrowserClient } from "../../lib/supabase";
@@ -45,12 +45,13 @@ function TypingIndicator() {
   );
 }
 
-const ALLOWED_MODELS = ["gemini-2.5-pro", "gemini-3.1-pro-preview"] as const;
+const ALLOWED_MODELS = ["gemini-2.5-pro", "gemini-3.1-pro-preview", "gemma-4-31b-it"] as const;
 type ModelId = (typeof ALLOWED_MODELS)[number];
 
 const CHAT_MODELS: { value: ModelId; label: string; heartColor: string }[] = [
   { value: "gemini-2.5-pro", label: "Gemini 2.5 Pro", heartColor: "#FF0000" },
   { value: "gemini-3.1-pro-preview", label: "Gemini 3.1 Pro", heartColor: "#FF6B00" },
+  { value: "gemma-4-31b-it", label: "큐브챗 1.0", heartColor: "#1A73E8" },
 ];
 const LEGACY_DEFAULT_AI_BUBBLE_BG = "#FFFFFF";
 
@@ -150,14 +151,14 @@ function CodeBlock({ children, light = false }: { children: React.ReactNode; lig
   );
 }
 
-const userMdComponents: Components = {
-  em: ({ children }) => (
-    <em style={{ color: "#555555", fontStyle: "normal" }}>{children}</em>
-  ),
-  strong: ({ children }) => (
+const SHARED_MD_COMPONENTS = {
+  strong: ({ children }: { children?: React.ReactNode }) => (
     <strong style={{ fontWeight: 700 }}>{children}</strong>
   ),
-  p: ({ children }) => <p className="my-3 break-words">{children}</p>,
+  p: ({ children }: { children?: React.ReactNode }) => <p className="my-3 break-words">{children}</p>,
+};
+
+const USER_CODE_COMPONENTS: Components = {
   code: ({ children, className }) => {
     if (className?.startsWith("language-")) {
       return <code className={className}>{children}</code>;
@@ -171,14 +172,7 @@ const userMdComponents: Components = {
   pre: ({ children }) => <CodeBlock light>{children}</CodeBlock>,
 };
 
-const aiMdComponents: Components = {
-  em: ({ children }) => (
-    <em style={{ color: "#888888", fontStyle: "normal" }}>{children}</em>
-  ),
-  strong: ({ children }) => (
-    <strong style={{ fontWeight: 700 }}>{children}</strong>
-  ),
-  p: ({ children }) => <p className="my-3 break-words">{children}</p>,
+const AI_CODE_COMPONENTS: Components = {
   code: ({ children, className }) => {
     if (className?.startsWith("language-")) {
       return <code className={className}>{children}</code>;
@@ -234,6 +228,23 @@ export default function ChatPage() {
 
   // 글꼴 설정
   const [fontSettings, setFontSettings] = useState<FontSettings>(DEFAULT_FONT_SETTINGS);
+
+  // narrationColor에 따라 em 컴포넌트 재생성
+  const emComponent = useMemo(() => {
+    const Em = ({ children }: { children?: React.ReactNode }) => (
+      <em style={{ color: fontSettings.narrationColor, fontStyle: "normal" }}>{children}</em>
+    );
+    return Em;
+  }, [fontSettings.narrationColor]);
+
+  const userMdComponents = useMemo<Components>(
+    () => ({ ...SHARED_MD_COMPONENTS, ...USER_CODE_COMPONENTS, em: emComponent }),
+    [emComponent]
+  );
+  const aiMdComponents = useMemo<Components>(
+    () => ({ ...SHARED_MD_COMPONENTS, ...AI_CODE_COMPONENTS, em: emComponent }),
+    [emComponent]
+  );
 
   // localStorage 초기화 (페르소나·노트·폰트)
   useEffect(() => {
@@ -1010,8 +1021,7 @@ export default function ChatPage() {
                     style={{
                       backgroundColor:
                         m.role === "user" ? fontSettings.userBubbleBg : fontSettings.aiBubbleBg,
-                      color:
-                        m.role === "user" ? fontSettings.userFontColor : fontSettings.aiFontColor,
+                      color: fontSettings.textColor,
                       fontSize: fontSettings.fontSize,
                     }}
                     onContextMenu={(e) => {

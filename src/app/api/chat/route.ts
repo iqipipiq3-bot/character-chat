@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { cookies } from "next/headers";
 import { createServerClient } from "@supabase/ssr";
-import { GoogleGenAI, ThinkingLevel } from "@google/genai";
+import { GoogleGenAI } from "@google/genai";
 import { replaceVariables } from "../../lib/replaceVariables";
 import { buildMemoryPrompt, type ConversationMemory } from "../../lib/memory/buildMemoryPrompt";
 
@@ -48,12 +48,20 @@ function getSupabaseEnv() {
   return { url, anonKey };
 }
 
-function getGeminiApiKey() {
-  const key = process.env.GEMINI_API_KEY;
-  if (!key) {
-    throw new Error("GEMINI_API_KEY is not set.");
-  }
-  return key;
+function getAI() {
+  const credentials = JSON.parse(process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON!);
+  return new GoogleGenAI({
+    vertexai: true,
+    project: process.env.GOOGLE_CLOUD_PROJECT_ID!,
+    location: process.env.GOOGLE_CLOUD_LOCATION!,
+    googleAuthOptions: { credentials },
+  });
+}
+
+function getGemmaAI() {
+  return new GoogleGenAI({
+    apiKey: process.env.GEMINI_API_KEY!,
+  });
 }
 
 type PostBody = {
@@ -71,10 +79,11 @@ type ModelConfig = {
   maxOutputTokens: number;
   temperature: number;
   topP: number;
-  topK: number;
+  topK?: number;
   presencePenalty: number | null;
+  frequencyPenalty: number | null;
   thinkingBudget: number | null;
-  thinkingLevel: ThinkingLevel | null;
+  thinkingLevel: string | null;
   systemSuffix: string;
 };
 
@@ -100,6 +109,7 @@ type ConversationRow = {
   scenario_id: string | null;
   gemini_cache_id: string | null;
   cache_expires_at: string | null;
+  cache_model: string | null;
 };
 
 type HistoryRow = {
@@ -108,11 +118,12 @@ type HistoryRow = {
   created_at: string;
 };
 
-const ALLOWED_MODELS = ["gemini-2.5-pro", "gemini-3.1-pro-preview"] as const;
+const ALLOWED_MODELS = ["gemini-2.5-pro", "gemini-3.1-pro-preview", "gemma-4-31b-it"] as const;
 
 const MODEL_COSTS: Record<string, number> = {
   "gemini-2.5-pro": 70,
   "gemini-3.1-pro-preview": 100,
+  "gemma-4-31b-it": 70,
 };
 
 const MODEL_CONFIG: Record<(typeof ALLOWED_MODELS)[number], ModelConfig> = {
@@ -121,20 +132,32 @@ const MODEL_CONFIG: Record<(typeof ALLOWED_MODELS)[number], ModelConfig> = {
     temperature: 1.3,
     topP: 0.95,
     topK: 40,
-    presencePenalty: null,
+    presencePenalty: 0.2,
+    frequencyPenalty: 0.2,
     thinkingBudget: 500,
     thinkingLevel: null,
     systemSuffix: "",
   },
   "gemini-3.1-pro-preview": {
     maxOutputTokens: 4000,
-    temperature: 1.1,
+    temperature: 1.2,
     topP: 0.95,
-    topK: 40,
-    presencePenalty: null,
+    presencePenalty: 0.2,
+    frequencyPenalty: 0.2,
     thinkingBudget: null,
-    thinkingLevel: ThinkingLevel.LOW,
+    thinkingLevel: "LOW",
     systemSuffix: "",
+  },
+  "gemma-4-31b-it": {
+    maxOutputTokens: 1500,
+    temperature: 1.3,
+    topP: 0.95,
+    topK: 64,
+    presencePenalty: null,
+    frequencyPenalty: null,
+    thinkingBudget: null,
+    thinkingLevel: null,
+    systemSuffix: "Output in Korean. Minimum 1,500 Korean characters. This is mandatory.",
   },
 };
 
@@ -154,6 +177,11 @@ const MODEL_PRICING: Record<(typeof ALLOWED_MODELS)[number], ModelPricing> = {
     inputA:  2.00 / 1_000_000, inputB:  4.00 / 1_000_000,
     cacheA:  0.20 / 1_000_000, cacheB:  0.40 / 1_000_000,
     outputA: 12.00 / 1_000_000, outputB: 18.00 / 1_000_000,
+  },
+  "gemma-4-31b-it": {
+    inputA:  0, inputB:  0,
+    cacheA:  0, cacheB:  0,
+    outputA: 0, outputB: 0,
   },
 };
 
@@ -258,10 +286,7 @@ async function createGeminiCache(
 ): Promise<{ name: string }> {
   const cache = await ai.caches.create({
     model: modelId,
-    config: {
-      systemInstruction: systemPrompt,
-      ttl: "3600s",
-    },
+    config: { systemInstruction: systemPrompt, ttl: "3600s" },
   });
   return { name: cache.name! };
 }
@@ -372,7 +397,7 @@ export async function POST(request: NextRequest) {
             .maybeSingle(),
       supabase
         .from("conversations")
-        .select("id, user_id, character_id, scenario_id, gemini_cache_id, cache_expires_at")
+        .select("id, user_id, character_id, scenario_id, gemini_cache_id, cache_expires_at, cache_model")
         .eq("id", conversationId)
         .maybeSingle<ConversationRow>(),
       supabase
@@ -536,20 +561,11 @@ export async function POST(request: NextRequest) {
       content: replaceVariables(message, userName),
     });
 
-    // ── Generation config ────────────────────────────────────────────────
-    type GenConfig = {
-      maxOutputTokens: number;
-      temperature: number;
-      topP: number;
-      topK: number;
-      presencePenalty?: number;
-      thinkingConfig?: { thinkingLevel?: ThinkingLevel; thinkingBudget?: number };
-      safetySettings: Array<{ category: string; threshold: string }>;
-      systemInstruction?: string;
-      cachedContent?: string;
-    };
+    // ── AI 초기화 + Generation config ──────────────────────────────────
+    const isGemma = modelId.startsWith("gemma");
+    const ai = isGemma ? getGemmaAI() : getAI();
 
-    const baseConfig: GenConfig = {
+    const genConfig: Record<string, unknown> = {
       maxOutputTokens: modelCfg.maxOutputTokens,
       temperature: modelCfg.temperature,
       topP: modelCfg.topP,
@@ -561,36 +577,34 @@ export async function POST(request: NextRequest) {
         { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" },
       ],
     };
-
-    if (modelCfg.presencePenalty !== null) {
-      baseConfig.presencePenalty = modelCfg.presencePenalty;
+    if (!isGemma && modelCfg.presencePenalty !== null) {
+      genConfig.presencePenalty = modelCfg.presencePenalty;
+    }
+    if (!isGemma && modelCfg.frequencyPenalty !== null) {
+      genConfig.frequencyPenalty = modelCfg.frequencyPenalty;
     }
     if (modelCfg.thinkingLevel !== null) {
-      baseConfig.thinkingConfig = { thinkingLevel: modelCfg.thinkingLevel };
+      genConfig.thinkingConfig = { thinkingLevel: modelCfg.thinkingLevel };
     } else if (modelCfg.thinkingBudget !== null) {
-      baseConfig.thinkingConfig = { thinkingBudget: modelCfg.thinkingBudget };
+      genConfig.thinkingConfig = { thinkingBudget: modelCfg.thinkingBudget };
     }
-
-    const apiKey = getGeminiApiKey();
-    const ai = new GoogleGenAI({ apiKey });
 
     // ── 캐시 처리 ────────────────────────────────────────────────────────
     let activeCacheName: string | null = null;
     let cacheStorageTokens = 0;
+    const cacheSupported = !modelId.startsWith("gemma");
 
-    // 캐시 프롬프트 = characterOnlyPrompt 와 동일 구조
-
-    {
+    if (cacheSupported) {
       const existingCacheId = existingConversation?.gemini_cache_id ?? null;
       const existingExpiresAt = existingConversation?.cache_expires_at ?? null;
       const isExpired = !existingExpiresAt || new Date(existingExpiresAt) <= new Date();
 
-      // 기존 캐시가 유효하면 재사용
-      if (existingCacheId && !isExpired) {
+      // 기존 캐시가 유효하고 모델이 같으면 재사용
+      if (existingCacheId && !isExpired && existingConversation?.cache_model === modelId) {
         try {
           const cached = await ai.caches.get({ name: existingCacheId });
           activeCacheName = cached.name ?? null;
-        } catch (cacheErr) {
+        } catch {
           await supabase
             .from("conversations")
             .update({ gemini_cache_id: null, cache_expires_at: null })
@@ -598,34 +612,21 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      // 캐시 없으면 백그라운드에서 생성 (중복 방지: conditional update)
+      // 캐시 없으면 동기적으로 생성 → 첫 턴부터 캐시 적용
       if (!activeCacheName) {
-        void (async () => {
-          try {
-            // 다른 요청이 이미 캐시를 생성했는지 확인
-            const { data: freshConvo } = await supabase
-              .from("conversations")
-              .select("gemini_cache_id")
-              .eq("id", conversationId)
-              .maybeSingle();
-
-            if (freshConvo?.gemini_cache_id) return; // 이미 생성됨
-
-            const newCache = await createGeminiCache(ai, modelId, characterOnlyPrompt);
-            const expiresAt = new Date(Date.now() + 3600 * 1000).toISOString();
-            // gemini_cache_id가 아직 null인 경우에만 업데이트 (중복 방지)
-            await supabase
-              .from("conversations")
-              .update({ gemini_cache_id: newCache.name, cache_expires_at: expiresAt })
-              .eq("id", conversationId)
-              .is("gemini_cache_id", null);
-          } catch {
-            // 캐시 생성 실패는 무시
-          }
-        })();
+        try {
+          const newCache = await createGeminiCache(ai, modelId, characterOnlyPrompt);
+          const expiresAt = new Date(Date.now() + 3600 * 1000).toISOString();
+          await supabase
+            .from("conversations")
+            .update({ gemini_cache_id: newCache.name, cache_expires_at: expiresAt, cache_model: modelId })
+            .eq("id", conversationId);
+          activeCacheName = newCache.name;
+        } catch (cacheErr) {
+          console.error("[CACHE DEBUG] 캐시 생성 실패:", cacheErr);
+        }
       }
     }
-
 
     // 페르소나 / 로어북 / 장기기억 — 캐시 여부 무관하게 항상 마지막 user 메시지 앞에 주입
     {
@@ -648,12 +649,14 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const genConfig: GenConfig = activeCacheName
-      ? { ...baseConfig, cachedContent: activeCacheName }
-      : { ...baseConfig, systemInstruction: characterOnlyPrompt };
+    // ── 모델 생성 + 스트리밍 호출 ────────────────────────────────────────
+    if (activeCacheName) {
+      genConfig.cachedContent = activeCacheName;
+    } else {
+      genConfig.systemInstruction = characterOnlyPrompt;
+    }
 
-
-    let streamResult: Awaited<ReturnType<typeof ai.models.generateContentStream>>;
+    let streamResult;
 
     try {
       streamResult = await ai.models.generateContentStream({
@@ -662,9 +665,14 @@ export async function POST(request: NextRequest) {
           role: entry.role,
           parts: [{ text: entry.content }],
         })),
-        config: genConfig as Parameters<typeof ai.models.generateContentStream>[0]["config"],
+        config: genConfig,
       });
-    } catch (sdkError) {
+    } catch (error: unknown) {
+      const err = error as Record<string, unknown>;
+      console.error("Vertex AI 상세 에러:", JSON.stringify(err, null, 2));
+      console.error("에러 메시지:", err?.message);
+      console.error("에러 상태:", err?.status);
+      console.error("에러 details:", err?.errorDetails);
       if (request.signal.aborted) {
         return new Response(null, { status: 499 });
       }
@@ -707,6 +715,9 @@ export async function POST(request: NextRequest) {
             controller.close();
             return;
           }
+
+          console.log("[CACHE DEBUG] activeCacheName:", activeCacheName);
+          console.log("[CACHE DEBUG] usageMeta:", JSON.stringify(usageMeta));
 
           const promptTokens = usageMeta.promptTokenCount ?? null;
           const cachedPromptTokens = usageMeta.cachedContentTokenCount ?? null;
@@ -899,7 +910,7 @@ export async function POST(request: NextRequest) {
 
                   const extractResult = await ai.models.generateContent({
                     model: "gemini-3.1-flash-lite-preview",
-                    contents: [{ role: "user", parts: [{ text: turnText }] }],
+                    contents: turnText,
                     config: {
                       systemInstruction: MEMORY_EXTRACT_SYSTEM_PROMPT,
                       temperature: 0.3,

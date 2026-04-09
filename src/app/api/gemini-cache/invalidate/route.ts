@@ -24,12 +24,14 @@ function getSupabaseEnv() {
   return { url, anonKey };
 }
 
-function getGeminiApiKey() {
-  const key = process.env.GEMINI_API_KEY;
-  if (!key) {
-    throw new Error("GEMINI_API_KEY is not set.");
-  }
-  return key;
+function getAI() {
+  const credentials = JSON.parse(process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON!);
+  return new GoogleGenAI({
+    vertexai: true,
+    project: process.env.GOOGLE_CLOUD_PROJECT_ID!,
+    location: process.env.GOOGLE_CLOUD_LOCATION!,
+    googleAuthOptions: { credentials },
+  });
 }
 
 export async function POST(request: NextRequest) {
@@ -103,7 +105,7 @@ export async function POST(request: NextRequest) {
     );
 
     if (uniqueCacheIds.length > 0) {
-      const ai = new GoogleGenAI({ apiKey: getGeminiApiKey() });
+      const ai = getAI();
       await Promise.all(
         uniqueCacheIds.map(async (cacheId) => {
           try {
