@@ -1,4 +1,5 @@
 import { createBrowserClient } from "@supabase/ssr";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
 function getSupabaseEnv() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -13,8 +14,12 @@ function getSupabaseEnv() {
   return { url, anonKey };
 }
 
+let browserClient: SupabaseClient | null = null;
+
 export function createSupabaseBrowserClient() {
+  if (browserClient) return browserClient;
   const { url, anonKey } = getSupabaseEnv();
-  return createBrowserClient(url, anonKey);
+  browserClient = createBrowserClient(url, anonKey);
+  return browserClient;
 }
 

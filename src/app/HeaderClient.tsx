@@ -32,12 +32,6 @@ export function HeaderClient({ displayName, isLoggedIn, avatarUrl, userId, follo
     }
   }, [mobileSearchOpen]);
 
-  useEffect(() => {
-    const supabase = createSupabaseBrowserClient();
-    supabase.auth.getSession().then(({ data, error }) => {
-      console.log("[HeaderClient] getSession result:", { session: data.session, error });
-    });
-  }, []);
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {

@@ -50,7 +50,7 @@ export default function EditCharacterPage() {
         if (scenErr) {
           console.error("[load] scenarios fetch failed:", scenErr?.message);
         } else {
-          scenarios = (scenData ?? []).map((s) => ({
+          scenarios = (scenData ?? []).map((s: Record<string, unknown>) => ({
             id: s.id as string,
             name: s.name as string,
             greeting: (s.first_message as string | null) ?? "",

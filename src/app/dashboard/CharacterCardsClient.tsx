@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import Image from "next/image";
 import { createSupabaseBrowserClient } from "../lib/supabase";
 import { getCardGradient } from "../lib/gradient";
 
@@ -74,28 +75,22 @@ export function CharacterCardsClient({ initial }: Props) {
     try {
       const supabase = createSupabaseBrowserClient();
 
-      // ① messages 삭제 (character_id 기준)
-      const { error: msgErr } = await supabase
-        .from("messages")
-        .delete()
-        .eq("character_id", character.id);
+      // ① messages + favorites 병렬 삭제 (독립적)
+      const [{ error: msgErr }, { error: favErr }] = await Promise.all([
+        supabase.from("messages").delete().eq("character_id", character.id),
+        supabase.from("favorites").delete().eq("character_id", character.id),
+      ]);
       if (msgErr) throw new Error(msgErr.message);
+      if (favErr) throw new Error(favErr.message);
 
-      // ② conversations 삭제
+      // ② conversations 삭제 (messages 삭제 후)
       const { error: convoErr } = await supabase
         .from("conversations")
         .delete()
         .eq("character_id", character.id);
       if (convoErr) throw new Error(convoErr.message);
 
-      // ③ favorites 삭제
-      const { error: favErr } = await supabase
-        .from("favorites")
-        .delete()
-        .eq("character_id", character.id);
-      if (favErr) throw new Error(favErr.message);
-
-      // ④ characters 삭제
+      // ③ characters 삭제
       const { error: charErr } = await supabase
         .from("characters")
         .delete()
@@ -230,11 +225,12 @@ export function CharacterCardsClient({ initial }: Props) {
             {/* 1:1 썸네일 */}
             <div className="relative aspect-square w-full overflow-hidden rounded-t-xl">
               {character.thumbnail_url ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
+                <Image
                   src={character.thumbnail_url}
                   alt={character.name}
-                  className="h-full w-full object-cover object-top"
+                  fill
+                  sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
+                  className="object-cover object-top"
                 />
               ) : (
                 <div className={`flex h-full w-full items-center justify-center ${getCardGradient(character.id)}`}>

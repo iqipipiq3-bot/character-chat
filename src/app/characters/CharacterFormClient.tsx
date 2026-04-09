@@ -409,9 +409,18 @@ export function CharacterFormClient({ mode, characterId, initialData }: Props) {
     setTemplates(data ?? []);
   }
 
+  const templatesLoadedRef = useRef(false);
+  const loreTemplatesLoadedRef = useRef(false);
+
   useEffect(() => {
-    if (activeTab === "settings") void loadTemplates();
-    if (activeTab === "lorebook") void loadLoreTemplates();
+    if (activeTab === "settings" && !templatesLoadedRef.current) {
+      templatesLoadedRef.current = true;
+      void loadTemplates();
+    }
+    if (activeTab === "lorebook" && !loreTemplatesLoadedRef.current) {
+      loreTemplatesLoadedRef.current = true;
+      void loadLoreTemplates();
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab]);
 
@@ -585,73 +594,51 @@ export function CharacterFormClient({ mode, characterId, initialData }: Props) {
         }
       }
 
-      // ── 3. character_scenarios 저장 ───────────────────────────────────────
-      const { error: delScenErr } = await supabase
-        .from("character_scenarios")
-        .delete()
-        .eq("character_id", charId!);
-      if (delScenErr) console.error("[save] scenarios delete failed:", { message: delScenErr.message, details: delScenErr.details, hint: delScenErr.hint, code: delScenErr.code });
+      // ── 3~5. scenarios / assets / lorebooks 삭제 (병렬) ─────────────────
+      const [{ error: delScenErr }, , { error: delLoreErr }] = await Promise.all([
+        supabase.from("character_scenarios").delete().eq("character_id", charId!),
+        deletedAssetIds.length > 0
+          ? supabase.from("character_assets").delete().in("id", deletedAssetIds)
+          : Promise.resolve({ error: null }),
+        supabase.from("character_lorebooks").delete().eq("character_id", charId!),
+      ]);
 
-      if (scenarios.length > 0) {
+      // ── 3. character_scenarios insert ─────────────────────────────────────
+      if (!delScenErr && scenarios.length > 0) {
         const insertData = scenarios.map((s) => ({
           character_id: charId!,
           name: s.name.trim(),
           first_message: s.greeting.trim(),
           scenario_prompt: s.prompt.trim(),
         }));
-        console.log("insert 시도 데이터:", JSON.stringify(insertData, null, 2));
-        const { error: scenErr } = await supabase.from("character_scenarios").insert(insertData);
-        if (scenErr) {
-          console.error("[save] scenarios insert failed:", JSON.stringify(scenErr, null, 2));
-          console.error("에러 전체:", scenErr);
-          console.error("코드:", scenErr?.code);
-          console.error("메시지:", scenErr?.message);
-          console.error("힌트:", scenErr?.hint);
-          console.error("상세:", scenErr?.details);
-        }
+        await supabase.from("character_scenarios").insert(insertData);
       }
 
-      // ── 4. character_assets 저장 ──────────────────────────────────────────
-      if (deletedAssetIds.length > 0) {
-        const { error: delAErr } = await supabase
-          .from("character_assets")
-          .delete()
-          .in("id", deletedAssetIds);
-        if (delAErr) console.error("[save] assets delete failed:", delAErr);
-      }
-      for (const asset of assets) {
+      // ── 4. character_assets 저장 (병렬 업로드) ────────────────────────────
+      await Promise.all(assets.map(async (asset) => {
         if (asset.file && !asset.id) {
-          // 신규 업로드
           const webpFile = await convertToWebP(asset.file);
           const path = `${user.id}/assets/${webpFile.name}`;
           const { error: aUpErr } = await supabase.storage
             .from("character-assets")
             .upload(path, webpFile, { upsert: true });
-          if (aUpErr) { console.error("[save] asset upload failed:", aUpErr); continue; }
+          if (aUpErr) return;
           const assetUrl = supabase.storage.from("character-assets").getPublicUrl(path).data.publicUrl;
-          const { error: aInsErr } = await supabase
+          await supabase
             .from("character_assets")
             .insert({ character_id: charId!, url: assetUrl, title: asset.title ?? null, keyword: asset.keyword ?? null });
-          if (aInsErr) console.error("[save] asset insert failed:", aInsErr);
         } else if (asset.id) {
-          // 기존 에셋 title/keyword 업데이트
-          const { error: aUpdErr } = await supabase
+          await supabase
             .from("character_assets")
             .update({ title: asset.title ?? null, keyword: asset.keyword ?? null })
             .eq("id", asset.id);
-          if (aUpdErr) console.error("[save] asset update failed:", aUpdErr);
         }
-      }
+      }));
 
-      // ── 5. character_lorebooks 저장 ───────────────────────────────────────
-      const { error: delLoreErr } = await supabase
-        .from("character_lorebooks")
-        .delete()
-        .eq("character_id", charId!);
-      if (delLoreErr) console.error("[save] lorebooks delete failed:", delLoreErr);
+      // ── 5. character_lorebooks insert ─────────────────────────────────────
 
       const validLorebooks = lorebooks.filter((l) => l.keyword.length > 0 && l.content.trim());
-      if (validLorebooks.length > 0) {
+      if (!delLoreErr && validLorebooks.length > 0) {
         const { error: loreErr } = await supabase.from("character_lorebooks").insert(
           validLorebooks.map((l, idx) => ({
             character_id: charId!,

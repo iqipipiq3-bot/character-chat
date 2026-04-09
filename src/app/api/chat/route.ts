@@ -296,7 +296,6 @@ function calculateEstimatedCost(params: {
 export async function POST(request: NextRequest) {
   try {
     const body = (await request.json()) as Partial<PostBody>;
-    console.log("[api/chat] request body", body);
 
     const characterId = body.character_id;
     const conversationId = body.conversation_id;
@@ -337,9 +336,6 @@ export async function POST(request: NextRequest) {
     if (!user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
-
-    // DB 쿼리 시작
-    const t0 = Date.now()
 
     // ── Batch 1: 인증 후 독립 쿼리 7개 병렬 실행 ────────────────────────────
     const [
@@ -400,7 +396,6 @@ export async function POST(request: NextRequest) {
         .limit(100),
     ]);
 
-    console.log('[timing] DB Batch1:', Date.now() - t0, 'ms')
 
     if (characterError) {
       return NextResponse.json({ error: characterError.message }, { status: 400 });
@@ -470,9 +465,8 @@ export async function POST(request: NextRequest) {
       userName = profileResult.data.nickname as string;
     }
 
-    const sortedHistory = ((history ?? []) as HistoryRow[]).sort(
-      (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
-    );
+    // DB에서 desc로 가져왔으므로 reverse로 asc 변환 (sort보다 O(n))
+    const sortedHistory = ((history ?? []) as HistoryRow[]).reverse();
 
     const isFirstTurn = !sortedHistory.some((entry) => entry.role === "user");
     const allText = [message, ...sortedHistory.map((entry) => entry.content)]
@@ -500,17 +494,17 @@ export async function POST(request: NextRequest) {
     const modelCfg = MODEL_CONFIG[modelId];
     const creditCost = MODEL_COSTS[modelId] ?? 60;
 
-    // ── 크레딧 잔액 확인 ───────────────────────────────────────────────────
-    const { data: creditsData } = await supabase
+    // ── 크레딧 잔액 사전 확인 (fast-fail, 실제 차감은 스트리밍 완료 후) ──
+    const { data: preCheckCredits } = await supabase
       .from("user_credits")
       .select("free_balance, paid_balance")
       .eq("user_id", user.id)
       .maybeSingle();
 
-    const freeBalance = creditsData?.free_balance ?? 0;
-    const paidBalance = creditsData?.paid_balance ?? 0;
+    const preCheckFree = preCheckCredits?.free_balance ?? 0;
+    const preCheckPaid = preCheckCredits?.paid_balance ?? 0;
 
-    if (freeBalance + paidBalance < creditCost) {
+    if (preCheckFree + preCheckPaid < creditCost) {
       return NextResponse.json(
         { error: "큐브가 부족합니다. 큐브를 충전해주세요." },
         { status: 402 }
@@ -596,9 +590,7 @@ export async function POST(request: NextRequest) {
         try {
           const cached = await ai.caches.get({ name: existingCacheId });
           activeCacheName = cached.name ?? null;
-          console.log("[cache] 재사용:", existingCacheId);
         } catch (cacheErr) {
-          console.error("[gemini-cache] 캐시 조회 실패, 초기화:", cacheErr);
           await supabase
             .from("conversations")
             .update({ gemini_cache_id: null, cache_expires_at: null })
@@ -606,27 +598,34 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      // 캐시 없으면 백그라운드에서 생성 (Gemini 호출을 블로킹하지 않음)
+      // 캐시 없으면 백그라운드에서 생성 (중복 방지: conditional update)
       if (!activeCacheName) {
-        console.log("[cache] 신규 생성 백그라운드 시작");
         void (async () => {
           try {
+            // 다른 요청이 이미 캐시를 생성했는지 확인
+            const { data: freshConvo } = await supabase
+              .from("conversations")
+              .select("gemini_cache_id")
+              .eq("id", conversationId)
+              .maybeSingle();
+
+            if (freshConvo?.gemini_cache_id) return; // 이미 생성됨
+
             const newCache = await createGeminiCache(ai, modelId, characterOnlyPrompt);
             const expiresAt = new Date(Date.now() + 3600 * 1000).toISOString();
-            const { error: updateErr } = await supabase
+            // gemini_cache_id가 아직 null인 경우에만 업데이트 (중복 방지)
+            await supabase
               .from("conversations")
               .update({ gemini_cache_id: newCache.name, cache_expires_at: expiresAt })
-              .eq("id", conversationId);
-            if (updateErr) console.error("[cache] DB 업데이트 실패:", updateErr.message);
-            else console.log("[cache] 백그라운드 생성 완료:", newCache.name);
-          } catch (err) {
-            console.log("[cache] 백그라운드 생성 실패:", err instanceof Error ? err.message : String(err));
+              .eq("id", conversationId)
+              .is("gemini_cache_id", null);
+          } catch {
+            // 캐시 생성 실패는 무시
           }
         })();
       }
     }
 
-    console.log('[timing] Cache:', Date.now() - t0, 'ms')
 
     // 페르소나 / 로어북 / 장기기억 — 캐시 여부 무관하게 항상 마지막 user 메시지 앞에 주입
     {
@@ -653,7 +652,6 @@ export async function POST(request: NextRequest) {
       ? { ...baseConfig, cachedContent: activeCacheName }
       : { ...baseConfig, systemInstruction: characterOnlyPrompt };
 
-    console.log("[gemini-request] model:", modelId, "| history:", sortedHistory.length, "turns | memory:", memoryBlock?.length ?? 0, "chars | lorebook:", matchingLorebooks.length, "entries | cached:", !!activeCacheName);
 
     let streamResult: Awaited<ReturnType<typeof ai.models.generateContentStream>>;
 
@@ -670,7 +668,6 @@ export async function POST(request: NextRequest) {
       if (request.signal.aborted) {
         return new Response(null, { status: 499 });
       }
-      console.error("Gemini API error:", sdkError);
       return NextResponse.json(
         { error: "Failed to reach the AI server. Please try again." },
         { status: 503 }
@@ -693,16 +690,10 @@ export async function POST(request: NextRequest) {
           };
           let usageMeta: UsageMeta = {};
 
-          let firstToken = true;
           for await (const chunk of streamResult) {
             if (request.signal.aborted) break;
             const text = chunk.text;
             if (!text) continue;
-
-            if (firstToken) {
-              console.log('[timing] First token:', Date.now() - t0, 'ms');
-              firstToken = false;
-            }
 
             fullReply += text;
             controller.enqueue(encoder.encode(`data: ${JSON.stringify({ text })}\n\n`));
@@ -732,11 +723,6 @@ export async function POST(request: NextRequest) {
             cacheStorageTokens,
           });
           const estimatedCost = (isNaN(calculatedCost) || calculatedCost == null) ? 0 : calculatedCost;
-
-          console.log("[api/chat] token usage", {
-            promptTokens, cachedPromptTokens, completionTokens,
-            thinkingTokens, totalTokens, estimatedCost,
-          });
 
           const finalReply =
             fullReply.trim() || "The model returned an empty response. Please try again.";
@@ -776,10 +762,38 @@ export async function POST(request: NextRequest) {
 
           // ── insert 실패 시 크레딧 차감 없이 에러 반환 ───────────────────
           if (insertError) {
-            console.error("[api/chat] DB insert error:", insertError.message);
             controller.enqueue(
               encoder.encode(`data: ${JSON.stringify({
                 error: insertError.message,
+                done: true,
+                freeBalance: preCheckFree,
+                paidBalance: preCheckPaid,
+              })}\n\n`)
+            );
+            controller.close();
+            return;
+          }
+
+          const userMessageId =
+            (insertedMessages as Array<{ id: string }> | null)?.[0]?.id ?? null;
+          const assistantMessageId =
+            (insertedMessages as Array<{ id: string }> | null)?.[1]?.id ?? null;
+
+          // ── 크레딧 차감 (optimistic locking: re-read → conditional update) ──
+          const { data: freshCredits } = await supabase
+            .from("user_credits")
+            .select("free_balance, paid_balance")
+            .eq("user_id", user.id)
+            .maybeSingle();
+
+          const freeBalance = freshCredits?.free_balance ?? 0;
+          const paidBalance = freshCredits?.paid_balance ?? 0;
+
+          if (freeBalance + paidBalance < creditCost) {
+            // 잔액 부족 — 메시지는 저장됐지만 차감 불가 (드문 레이스 케이스)
+            controller.enqueue(
+              encoder.encode(`data: ${JSON.stringify({
+                error: "큐브가 부족하여 차감에 실패했습니다.",
                 done: true,
                 freeBalance,
                 paidBalance,
@@ -789,170 +803,63 @@ export async function POST(request: NextRequest) {
             return;
           }
 
-          // ── 크레딧 차감 (메시지 저장 성공 후) ────────────────────────────
           const freeUsed = Math.min(freeBalance, creditCost);
           const paidUsed = creditCost - freeUsed;
           const creditType =
             freeUsed > 0 && paidUsed > 0 ? "mixed" : freeUsed > 0 ? "free" : "paid";
           const newFreeBalance = freeBalance - freeUsed;
           const newPaidBalance = paidBalance - paidUsed;
-          const assistantMessageId =
-            (insertedMessages as Array<{ id: string }> | null)?.[1]?.id ?? null;
 
-          await Promise.all([
-            supabase.from("user_credits").upsert(
-              {
-                user_id: user.id,
-                free_balance: newFreeBalance,
-                paid_balance: newPaidBalance,
-                updated_at: new Date().toISOString(),
-              },
-              { onConflict: "user_id" }
-            ),
-            supabase.from("credit_transactions").insert({
-              user_id: user.id,
-              amount: -creditCost,
-              credit_type: creditType,
-              transaction_type: "chat_deduct",
-              description: `채팅 (${modelId})`,
-              reference_id: assistantMessageId,
-            }),
-          ]);
+          // Optimistic lock: WHERE로 현재 잔액 일치 확인 후 업데이트
+          const { count: updatedCount } = await supabase
+            .from("user_credits")
+            .update({
+              free_balance: newFreeBalance,
+              paid_balance: newPaidBalance,
+              updated_at: new Date().toISOString(),
+            })
+            .eq("user_id", user.id)
+            .eq("free_balance", freeBalance)
+            .eq("paid_balance", paidBalance);
 
-          // ── 기억 추출 + 패션 업데이트 (5번째 턴마다) ────────────────────
-          let fashionUpdate: string | null = null;
-          const currentTurnCount = (totalUserMsgCount ?? 0) + 1;
-          if (currentTurnCount % 5 === 0) { try {
-            const turnStart = currentTurnCount - 4;
-            const turnRangeLabel = `${turnStart}-${currentTurnCount}`;
-
-            const { data: existingTurnMemory } = await supabase
-              .from("conversation_memories")
-              .select("id")
-              .eq("conversation_id", conversationId)
-              .eq("memory_type", "timeline")
-              .eq("turn_range", turnRangeLabel)
+          if (updatedCount === 0) {
+            // Race condition 발생 — 재시도 1회
+            const { data: retryCredits } = await supabase
+              .from("user_credits")
+              .select("free_balance, paid_balance")
+              .eq("user_id", user.id)
               .maybeSingle();
 
-            if (existingTurnMemory) {
-              console.log("[api/chat] 기억 추출 스킵: 이미 존재하는 turn_range", turnRangeLabel);
-            } else {
-              const turnText = [
-                `[현재 턴 구간: ${turnRangeLabel}]`,
-                `유저: ${message}`,
-                `캐릭터: ${finalReply}`,
-              ].join("\n");
+            const retryFree = retryCredits?.free_balance ?? 0;
+            const retryPaid = retryCredits?.paid_balance ?? 0;
 
-              const extractResult = await ai.models.generateContent({
-                model: "gemini-3.1-flash-lite-preview",
-                contents: [{ role: "user", parts: [{ text: turnText }] }],
-                config: {
-                  systemInstruction: MEMORY_EXTRACT_SYSTEM_PROMPT,
-                  temperature: 0.3,
-                  maxOutputTokens: 1024,
-                },
-              });
-              const rawMemoryText = (extractResult.text ?? "").trim();
+            if (retryFree + retryPaid >= creditCost) {
+              const retryFreeUsed = Math.min(retryFree, creditCost);
+              const retryPaidUsed = creditCost - retryFreeUsed;
 
-              let extractedMemories: Array<{
-                type: string;
-                content: string;
-                importance: number;
-                rp_date?: string;
-                turn_range?: string;
-              }> = [];
-              try {
-                const cleaned = rawMemoryText
-                  .replace(/^```json\s*/i, "")
-                  .replace(/^```\s*/i, "")
-                  .replace(/\s*```$/i, "")
-                  .trim();
-                const parsed = JSON.parse(cleaned) as unknown;
-                if (Array.isArray(parsed)) {
-                  extractedMemories = parsed as typeof extractedMemories;
-                }
-              } catch {
-                // JSON 파싱 실패 시 무시
-              }
-
-              const VALID_TYPES = ["core_concept", "timeline", "relationship"];
-              const filtered = extractedMemories.filter((m) => VALID_TYPES.includes(m.type));
-
-              if (filtered.length > 0) {
-                // relationship 타입이 있으면 기존 항목 먼저 비활성화
-                if (filtered.some((m) => m.type === "relationship")) {
-                  await supabase
-                    .from("conversation_memories")
-                    .update({ is_active: false })
-                    .eq("conversation_id", conversationId)
-                    .eq("memory_type", "relationship")
-                    .eq("is_active", true);
-                }
-
-                // 나머지 insert 병렬 처리
-                const results = await Promise.all(
-                  filtered.map((m) =>
-                    supabase.from("conversation_memories").insert({
-                      conversation_id: conversationId,
-                      character_id: characterId,
-                      user_id: user.id,
-                      memory_type: m.type,
-                      content: m.content,
-                      importance: m.importance,
-                      rp_date: m.rp_date ?? null,
-                      turn_range: m.turn_range ?? null,
-                      source: "ai",
-                      is_active: true,
-                    })
-                  )
-                );
-                const savedCount = results.filter((r) => !r.error).length;
-                results.filter((r) => r.error).forEach((r) =>
-                  console.error("[api/chat] 기억 insert 실패:", r.error)
-                );
-                console.log("[api/chat] 기억 저장 완료:", savedCount + "개");
-              }
-            }
-          } catch (memErr) {
-            console.error("[api/chat] 기억 추출 실패 (무시):", memErr);
-          }
-
-          // ── 패션 동적 업데이트 (personaId 있을 때만) ──────────────────────
-          if (body.active_persona_id) {
-            try {
-              const recentMessages = [
-                ...sortedHistory.slice(-8).map((h) => ({ role: h.role, content: h.content })),
-                { role: "user", content: message },
-                { role: "assistant", content: finalReply },
-              ];
-              const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "";
-              const fashionRes = await fetch(`${siteUrl}/api/personas/dynamic-update`, {
-                method: "POST",
-                headers: {
-                  "Content-Type": "application/json",
-                  Cookie: request.headers.get("cookie") ?? "",
-                },
-                body: JSON.stringify({
-                  personaId: body.active_persona_id,
-                  recentMessages,
-                }),
-              });
-              const fashionData = await fashionRes.json() as { updated?: boolean; fashion?: string };
-              if (fashionData.updated && fashionData.fashion) {
-                fashionUpdate = fashionData.fashion;
-              }
-            } catch {
-              // 조용히 실패
+              await supabase
+                .from("user_credits")
+                .update({
+                  free_balance: retryFree - retryFreeUsed,
+                  paid_balance: retryPaid - retryPaidUsed,
+                  updated_at: new Date().toISOString(),
+                })
+                .eq("user_id", user.id)
+                .eq("free_balance", retryFree)
+                .eq("paid_balance", retryPaid);
             }
           }
-          } // end if (currentTurnCount % 5 === 0)
 
-          if (fashionUpdate) {
-            controller.enqueue(
-              encoder.encode(`data: ${JSON.stringify({ fashionUpdate })}\n\n`)
-            );
-          }
+          await supabase.from("credit_transactions").insert({
+            user_id: user.id,
+            amount: -creditCost,
+            credit_type: creditType,
+            transaction_type: "chat_deduct",
+            description: `채팅 (${modelId})`,
+            reference_id: assistantMessageId,
+          });
 
+          // ── done 이벤트를 먼저 전송하여 클라이언트 로딩 즉시 해제 ──
           controller.enqueue(
             encoder.encode(
               `data: ${JSON.stringify({
@@ -960,13 +867,106 @@ export async function POST(request: NextRequest) {
                 model: modelId,
                 freeBalance: newFreeBalance,
                 paidBalance: newPaidBalance,
+                userMessageId,
+                assistantMessageId,
               })}\n\n`
             )
           );
           controller.close();
+
+          // ── 기억 추출 (fire-and-forget: 클라이언트 대기 없음) ─────────
+          const currentTurnCount = (totalUserMsgCount ?? 0) + 1;
+          if (currentTurnCount % 5 === 0) {
+            void (async () => {
+              try {
+                const turnStart = currentTurnCount - 4;
+                const turnRangeLabel = `${turnStart}-${currentTurnCount}`;
+
+                const { data: existingTurnMemory } = await supabase
+                  .from("conversation_memories")
+                  .select("id")
+                  .eq("conversation_id", conversationId)
+                  .eq("memory_type", "timeline")
+                  .eq("turn_range", turnRangeLabel)
+                  .maybeSingle();
+
+                if (!existingTurnMemory) {
+                  const turnText = [
+                    `[현재 턴 구간: ${turnRangeLabel}]`,
+                    `유저: ${message}`,
+                    `캐릭터: ${finalReply}`,
+                  ].join("\n");
+
+                  const extractResult = await ai.models.generateContent({
+                    model: "gemini-3.1-flash-lite-preview",
+                    contents: [{ role: "user", parts: [{ text: turnText }] }],
+                    config: {
+                      systemInstruction: MEMORY_EXTRACT_SYSTEM_PROMPT,
+                      temperature: 0.3,
+                      maxOutputTokens: 1024,
+                    },
+                  });
+                  const rawMemoryText = (extractResult.text ?? "").trim();
+
+                  let extractedMemories: Array<{
+                    type: string;
+                    content: string;
+                    importance: number;
+                    rp_date?: string;
+                    turn_range?: string;
+                  }> = [];
+                  try {
+                    const cleaned = rawMemoryText
+                      .replace(/^```json\s*/i, "")
+                      .replace(/^```\s*/i, "")
+                      .replace(/\s*```$/i, "")
+                      .trim();
+                    const parsed = JSON.parse(cleaned) as unknown;
+                    if (Array.isArray(parsed)) {
+                      extractedMemories = parsed as typeof extractedMemories;
+                    }
+                  } catch {
+                    // JSON 파싱 실패 시 무시
+                  }
+
+                  const VALID_TYPES = ["core_concept", "timeline", "relationship"];
+                  const filtered = extractedMemories.filter((m) => VALID_TYPES.includes(m.type));
+
+                  if (filtered.length > 0) {
+                    if (filtered.some((m) => m.type === "relationship")) {
+                      await supabase
+                        .from("conversation_memories")
+                        .update({ is_active: false })
+                        .eq("conversation_id", conversationId)
+                        .eq("memory_type", "relationship")
+                        .eq("is_active", true);
+                    }
+
+                    await Promise.all(
+                      filtered.map((m) =>
+                        supabase.from("conversation_memories").insert({
+                          conversation_id: conversationId,
+                          character_id: characterId,
+                          user_id: user.id,
+                          memory_type: m.type,
+                          content: m.content,
+                          importance: m.importance,
+                          rp_date: m.rp_date ?? null,
+                          turn_range: m.turn_range ?? null,
+                          source: "ai",
+                          is_active: true,
+                        })
+                      )
+                    );
+                  }
+                }
+              } catch {
+                // 기억 추출 실패는 무시
+              }
+            })();
+          }
         } catch (error) {
           const messageText = error instanceof Error ? error.message : "Streaming error";
-          console.error("[api/chat] streaming error:", messageText);
 
           try {
             controller.enqueue(

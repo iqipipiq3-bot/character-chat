@@ -69,18 +69,20 @@ export default async function RootLayout({
     userId = user.id;
     const kstToday = getKSTDateString();
 
+    // 프로필 + 크레딧 + 출석만 먼저 로드 (헤더 렌더에 필수)
+    // 팔로워/팔로잉 카운트는 드롭다운에서만 필요하므로 병렬로 가져오되 실패해도 무방
     const [
       { data: profile },
-      { count: fwrCount },
-      { count: fwingCount },
       { data: creditsData },
       { data: checkinData },
+      { count: fwrCount },
+      { count: fwingCount },
     ] = await Promise.all([
       supabase.from("profiles").select("nickname, avatar_url").eq("user_id", user.id).maybeSingle(),
-      supabase.from("follows").select("*", { count: "exact", head: true }).eq("following_id", user.id),
-      supabase.from("follows").select("*", { count: "exact", head: true }).eq("follower_id", user.id),
       supabase.from("user_credits").select("free_balance, paid_balance").eq("user_id", user.id).maybeSingle(),
       supabase.from("daily_checkins").select("id").eq("user_id", user.id).eq("checked_date", kstToday).maybeSingle(),
+      supabase.from("follows").select("*", { count: "exact", head: true }).eq("following_id", user.id),
+      supabase.from("follows").select("*", { count: "exact", head: true }).eq("follower_id", user.id),
     ]);
 
     const nickname = (profile?.nickname as string | null) ?? "";

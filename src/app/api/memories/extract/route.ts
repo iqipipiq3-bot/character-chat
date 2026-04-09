@@ -155,62 +155,66 @@ export async function POST(request: NextRequest) {
     }
 
     // ── conversation_memories 타입별 저장 ────────────────────────────────────
-    const allInserted: unknown[] = [];
 
-    for (const m of memories) {
-      // ── timeline: 동일 turn_range 중복 스킵 ──────────────────────────────
-      if (m.type === "timeline") {
-        if (m.turn_range) {
-          const { data: existing } = await supabase
+    // 1. timeline 중복 체크 + relationship 비활성화 (사전 준비)
+    const timelineMemories = memories.filter((m) => m.type === "timeline" && m.turn_range);
+    const hasRelationship = memories.some((m) => m.type === "relationship");
+
+    const [timelineDupCheck] = await Promise.all([
+      timelineMemories.length > 0
+        ? supabase
             .from("conversation_memories")
-            .select("id")
+            .select("turn_range")
             .eq("conversation_id", conversation_id)
             .eq("type", "timeline")
-            .eq("turn_range", m.turn_range)
-            .maybeSingle();
+            .in("turn_range", timelineMemories.map((m) => m.turn_range!))
+        : Promise.resolve({ data: [] as { turn_range: string }[] }),
+      hasRelationship
+        ? supabase
+            .from("conversation_memories")
+            .update({ is_active: false })
+            .eq("conversation_id", conversation_id)
+            .eq("type", "relationship")
+            .eq("is_active", true)
+        : Promise.resolve(null),
+    ]);
 
-          if (existing) {
-            console.log(`[memories/extract] timeline turn_range ${m.turn_range} 이미 존재, 스킵`);
-            continue;
-          }
-        }
+    const existingTurnRanges = new Set(
+      (timelineDupCheck.data ?? []).map((r) => (r as { turn_range: string }).turn_range)
+    );
+
+    // 2. 중복 제외 후 병렬 insert
+    const toInsert = memories.filter((m) => {
+      if (m.type === "timeline" && m.turn_range && existingTurnRanges.has(m.turn_range)) {
+        return false;
       }
+      return true;
+    });
 
-      // ── relationship: 기존 레코드 비활성화 후 새로 insert ────────────────
-      if (m.type === "relationship") {
-        await supabase
+    const results = await Promise.all(
+      toInsert.map((m) =>
+        supabase
           .from("conversation_memories")
-          .update({ is_active: false })
-          .eq("conversation_id", conversation_id)
-          .eq("type", "relationship")
-          .eq("is_active", true);
-      }
+          .insert({
+            conversation_id,
+            character_id,
+            user_id: user.id,
+            type: m.type,
+            content: m.content,
+            importance: m.importance,
+            rp_date: m.rp_date ?? null,
+            turn_range: m.turn_range ?? null,
+            source: "ai",
+            is_active: true,
+          })
+          .select()
+          .single()
+      )
+    );
 
-      // ── insert (core_concept은 그대로 누적) ──────────────────────────────
-      const { data: inserted, error: insertError } = await supabase
-        .from("conversation_memories")
-        .insert({
-          conversation_id,
-          character_id,
-          user_id: user.id,
-          type: m.type,
-          content: m.content,
-          importance: m.importance,
-          rp_date: m.rp_date ?? null,
-          turn_range: m.turn_range ?? null,
-          source: "ai",
-          is_active: true,
-        })
-        .select()
-        .single();
-
-      if (insertError) {
-        console.error(`[memories/extract] insert error (${m.type}):`, insertError.message);
-        continue;
-      }
-
-      allInserted.push(inserted);
-    }
+    const allInserted = results
+      .filter((r) => !r.error)
+      .map((r) => r.data);
 
     return NextResponse.json({ saved: allInserted.length, memories: allInserted });
   } catch (error) {

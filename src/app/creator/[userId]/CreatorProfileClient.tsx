@@ -159,13 +159,13 @@ export function CreatorProfileClient({
           .from("follows")
           .select("follower_id")
           .eq("following_id", profile.user_id);
-        ids = (data ?? []).map((r) => r.follower_id as string);
+        ids = (data ?? []).map((r: Record<string, unknown>) => r.follower_id as string);
       } else {
         const { data } = await supabase
           .from("follows")
           .select("following_id")
           .eq("follower_id", profile.user_id);
-        ids = (data ?? []).map((r) => r.following_id as string);
+        ids = (data ?? []).map((r: Record<string, unknown>) => r.following_id as string);
       }
       if (ids.length === 0) { setModalUsers([]); return; }
       const { data: profiles } = await supabase
@@ -173,7 +173,7 @@ export function CreatorProfileClient({
         .select("user_id, nickname, avatar_url")
         .in("user_id", ids);
       setModalUsers(
-        (profiles ?? []).map((p) => ({
+        (profiles ?? []).map((p: Record<string, unknown>) => ({
           user_id: p.user_id as string,
           nickname: (p.nickname as string | null) ?? "익명",
           avatar_url: (p.avatar_url as string | null) ?? null,

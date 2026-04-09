@@ -1,3 +1,4 @@
+import Image from "next/image";
 import { getCardGradient } from "../lib/gradient";
 
 function formatCount(n: number | null | undefined): string {
@@ -35,13 +36,14 @@ export function CharacterCard({ character, onClick }: Props) {
       }`}
     >
       {/* 썸네일 */}
-      <div className="aspect-square w-full overflow-hidden">
+      <div className="relative aspect-square w-full overflow-hidden">
         {character.thumbnail_url ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
+          <Image
             src={character.thumbnail_url}
             alt={character.name}
-            className={`h-full w-full object-cover object-top ${onClick ? "transition-transform duration-300 group-hover:scale-105" : ""}`}
+            fill
+            sizes="(max-width: 768px) 50vw, (max-width: 1024px) 33vw, 25vw"
+            className={`object-cover object-top ${onClick ? "transition-transform duration-300 group-hover:scale-105" : ""}`}
           />
         ) : (
           <div

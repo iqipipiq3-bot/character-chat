@@ -194,8 +194,7 @@ export function DashboardTabsClient({ characters }: DashboardTabsClientProps) {
   }
 
   useEffect(() => {
-    void loadTemplates();
-    void loadLoreTemplates();
+    void Promise.all([loadTemplates(), loadLoreTemplates()]);
   }, []);
 
   async function handleLoreAdd() {

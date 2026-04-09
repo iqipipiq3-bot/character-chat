@@ -1,6 +1,7 @@
 import { cookies } from "next/headers";
 import { createServerClient } from "@supabase/ssr";
 import Link from "next/link";
+import Image from "next/image";
 import { redirect } from "next/navigation";
 
 function getSupabaseEnv() {
@@ -110,13 +111,14 @@ export default async function ChatsPage() {
                   className="flex items-center gap-3 px-4 py-3 hover:bg-zinc-50 dark:hover:bg-zinc-900 active:bg-zinc-100 dark:active:bg-zinc-800 transition-colors border-b border-zinc-50 dark:border-zinc-900"
                 >
                   {/* 캐릭터 썸네일 */}
-                  <div className="h-11 w-11 shrink-0 overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-700">
+                  <div className="relative h-11 w-11 shrink-0 overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-700">
                     {convo.character_thumbnail ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
+                      <Image
                         src={convo.character_thumbnail}
                         alt={convo.character_name}
-                        className="h-full w-full object-cover object-top"
+                        fill
+                        sizes="44px"
+                        className="object-cover object-top"
                       />
                     ) : (
                       <div className="flex h-full w-full items-center justify-center text-sm font-bold text-zinc-400 dark:text-zinc-500">

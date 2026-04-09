@@ -160,13 +160,13 @@ export function ConversationSidebar() {
           .select("id, character_id, created_at")
           .eq("user_id", user.id)
           .order("created_at", { ascending: false });
-        finalConvos = (fallback ?? []).map((c) => ({ ...c, title: null, folder_id: null }));
+        finalConvos = (fallback ?? []).map((c: Record<string, unknown>) => ({ ...c, title: null, folder_id: null })) as typeof finalConvos;
       }
 
       setConversations((finalConvos ?? []) as Conversation[]);
       setFolders((folderData ?? []) as Folder[]);
 
-      const charIds = [...new Set((finalConvos ?? []).map((c) => c.character_id as string))];
+      const charIds = [...new Set((finalConvos ?? []).map((c: Record<string, unknown>) => c.character_id as string))];
       if (charIds.length > 0) {
         const { data: chars } = await supabase.from("characters").select("id, name").in("id", charIds);
         setCharNames(chars ?? []);
@@ -175,17 +175,22 @@ export function ConversationSidebar() {
     void load();
   }, [show]);
 
-  // 마지막 메시지 로드
+  // 마지막 메시지 로드 (병렬)
   useEffect(() => {
     if (conversations.length === 0) return;
     const supabase = createSupabaseBrowserClient();
     async function loadLast() {
+      const entries = await Promise.all(
+        conversations.map(async (convo) => {
+          const { data } = await supabase
+            .from("messages").select("content").eq("conversation_id", convo.id)
+            .order("created_at", { ascending: false }).limit(1);
+          return [convo.id, data?.[0]?.content ?? ""] as const;
+        })
+      );
       const updates: Record<string, string> = {};
-      for (const convo of conversations) {
-        const { data } = await supabase
-          .from("messages").select("content").eq("conversation_id", convo.id)
-          .order("created_at", { ascending: false }).limit(1);
-        if (data?.[0]) updates[convo.id] = data[0].content ?? "";
+      for (const [id, content] of entries) {
+        if (content) updates[id] = content;
       }
       setLastMessages(updates);
     }
@@ -289,7 +294,6 @@ export function ConversationSidebar() {
       for (const id of convoIds) {
         const { error } = await supabase.from("conversations").update({ folder_id: folderId }).eq("id", id);
         if (error) {
-          console.error("[handleMoveToFolder] error:", { message: error.message, details: error.details, hint: error.hint, code: error.code });
           throw error;
         }
       }

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import Image from "next/image";
 import { createSupabaseBrowserClient } from "../../lib/supabase";
 import { getCardGradient } from "../../lib/gradient";
 import { MarkdownRenderer } from "../../components/MarkdownRenderer";
@@ -127,8 +128,6 @@ export function CharacterDetailClient({
       const modelParam = character.recommended_model
         ? `?model=${encodeURIComponent(character.recommended_model)}`
         : "";
-      console.log("[startConversation] recommended_model:", character.recommended_model);
-      console.log("[startConversation] 이동 URL:", `/chat/${conversationId}${modelParam}`);
       router.push(`/chat/${conversationId}${modelParam}`);
     } catch (err) {
       window.alert(err instanceof Error ? err.message : "대화방을 여는 중 오류가 발생했습니다.");
@@ -274,13 +273,14 @@ export function CharacterDetailClient({
       {/* ── 캐릭터 헤더 ── */}
       <div className="flex flex-col items-center gap-4 sm:flex-row sm:items-start sm:gap-5">
         {/* 썸네일 */}
-        <div className="h-32 w-32 shrink-0 overflow-hidden rounded-2xl sm:h-24 sm:w-24">
+        <div className="relative h-32 w-32 shrink-0 overflow-hidden rounded-2xl sm:h-24 sm:w-24">
           {character.thumbnail_url ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
+            <Image
               src={character.thumbnail_url}
               alt={character.name}
-              className="h-full w-full object-cover object-top"
+              fill
+              sizes="128px"
+              className="object-cover object-top"
             />
           ) : (
             <div className={`flex h-full w-full items-center justify-center ${getCardGradient(character.id)}`}>

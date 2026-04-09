@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { createSupabaseBrowserClient } from "../../lib/supabase";
@@ -289,11 +289,6 @@ export default function ChatPage() {
     async function loadConversation() {
       const supabase = createSupabaseBrowserClient();
       const characterIdFromQuery = searchParams.get("characterId");
-      console.log("[chat] loadConversation start", {
-        conversationId,
-        characterIdFromQuery,
-      });
-
       const { data, error } = await supabase
         .from("conversations")
         .select("character_id, model")
@@ -301,7 +296,6 @@ export default function ChatPage() {
         .maybeSingle();
 
       if (error) {
-        console.error("[chat] loadConversation error", { conversationId, error });
         setError("대화를 불러올 수 없습니다.");
         return;
       }
@@ -315,7 +309,6 @@ export default function ChatPage() {
           } = await supabase.auth.getUser();
 
           if (userError || !user) {
-            console.error("[chat] loadConversation getUser error", userError);
             setError("대화를 불러올 수 없습니다.");
             return;
           }
@@ -324,10 +317,6 @@ export default function ChatPage() {
           const newCharacterId = characterIdFromQuery ?? (conversationId as string | null);
 
           if (!newCharacterId) {
-            console.error("[chat] loadConversation missing character_id", {
-              conversationId,
-              characterIdFromQuery,
-            });
             setError("대화를 불러올 수 없습니다.");
             return;
           }
@@ -338,44 +327,29 @@ export default function ChatPage() {
             user_id: user.id,
             character_id: newCharacterId,
           };
-          console.log("[chat] loadConversation upserting conversation", insertPayload);
-
           const { error: insertError } = await supabase
             .from("conversations")
             .upsert(insertPayload, { onConflict: "id", ignoreDuplicates: true });
 
           if (insertError) {
-            console.error("[chat] loadConversation insert error", {
-              message: insertError.message,
-              details: insertError.details,
-            });
             setError("대화를 불러올 수 없습니다.");
             return;
           }
 
-          console.log("[chat] loadConversation created conversation", {
-            conversationId,
-            character_id: newCharacterId,
-          });
           setCharacterId(newCharacterId);
           return;
-        } catch (err) {
-          console.error("[chat] loadConversation unexpected error", err);
+        } catch {
           setError("대화를 불러올 수 없습니다.");
           return;
         }
       }
 
-      console.log("[chat] loadConversation success", {
-        conversationId,
-        character_id: data.character_id,
-        model: data.model,
-      });
       conversationModelRef.current = (data as { character_id: string; model?: string | null }).model ?? null;
       setCharacterId(data.character_id);
     }
     if (conversationId) void loadConversation();
-  }, [conversationId, searchParams]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [conversationId]);
 
   // 캐릭터 이름 + 페르소나 목록 로드
   useEffect(() => {
@@ -437,6 +411,11 @@ export default function ChatPage() {
   const { updateCredits } = useHeaderStore();
 
   const [messages, setMessages] = useState<Message[]>([]);
+  const [hasMore, setHasMore] = useState(true);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const oldestCreatedAtRef = useRef<string | null>(null);
+  const PAGE_SIZE = 30;
+
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -475,7 +454,8 @@ export default function ChatPage() {
         .from("messages")
         .select("id, role, content, created_at, model")
         .eq("conversation_id", conversationId)
-        .order("created_at", { ascending: true });
+        .order("created_at", { ascending: false })
+        .limit(PAGE_SIZE);
 
       if (fetchError) {
         // model 컬럼 누락 에러 무시하고 model 없이 재시도
@@ -484,18 +464,17 @@ export default function ChatPage() {
             .from("messages")
             .select("id, role, content, created_at")
             .eq("conversation_id", conversationId)
-            .order("created_at", { ascending: true });
+            .order("created_at", { ascending: false })
+            .limit(PAGE_SIZE);
           if (fallbackError) { setError(fallbackError.message); return; }
-          const fallbackSorted = ((fallbackData ?? []) as Message[]).sort((a, b) => {
-            const timeDiff = new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
-            if (timeDiff !== 0) return timeDiff;
-            if (a.role === "user" && b.role === "assistant") return -1;
-            if (a.role === "assistant" && b.role === "user") return 1;
-            return 0;
-          });
-          setMessages(fallbackSorted);
+          const fallbackMsgs = ((fallbackData ?? []) as Message[]).reverse();
+          setMessages(fallbackMsgs);
+          setHasMore(fallbackMsgs.length >= PAGE_SIZE);
+          if (fallbackMsgs.length > 0) {
+            oldestCreatedAtRef.current = fallbackMsgs[0].created_at;
+          }
           requestAnimationFrame(() => {
-            if (fallbackSorted.length === 0) {
+            if (fallbackMsgs.length === 0) {
               window.scrollTo({ top: 0, behavior: "instant" });
             } else {
               bottomRef.current?.scrollIntoView({ behavior: "instant" });
@@ -507,18 +486,14 @@ export default function ChatPage() {
         return;
       }
 
-      const sorted = ((data ?? []) as Message[]).sort((a, b) => {
-        const timeDiff = new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
-        if (timeDiff !== 0) return timeDiff;
-        // 같은 created_at이면 user → assistant 순서 보장
-        if (a.role === "user" && b.role === "assistant") return -1;
-        if (a.role === "assistant" && b.role === "user") return 1;
-        return 0;
-      });
-      setMessages(sorted);
-      // 최초 로드 완료 후 새 채팅이면 최상단, 기존 채팅이면 최하단
+      const msgs = ((data ?? []) as Message[]).reverse();
+      setMessages(msgs);
+      setHasMore(msgs.length >= PAGE_SIZE);
+      if (msgs.length > 0) {
+        oldestCreatedAtRef.current = msgs[0].created_at;
+      }
       requestAnimationFrame(() => {
-        if (sorted.length === 0) {
+        if (msgs.length === 0) {
           window.scrollTo({ top: 0, behavior: "instant" });
         } else {
           bottomRef.current?.scrollIntoView({ behavior: "instant" });
@@ -531,16 +506,60 @@ export default function ChatPage() {
     }
   }, [conversationId]);
 
-  // 유저 스크롤 감지: 올리면 isUserScrolling=true, 맨 아래 도달하면 false
+  // 이전 메시지 추가 로딩
+  const loadMoreMessages = useCallback(async () => {
+    if (isLoadingMore || !hasMore || !oldestCreatedAtRef.current) return;
+    setIsLoadingMore(true);
+
+    const prevScrollHeight = document.documentElement.scrollHeight;
+
+    try {
+      const supabase = createSupabaseBrowserClient();
+      const { data } = await supabase
+        .from("messages")
+        .select("id, role, content, created_at, model")
+        .eq("conversation_id", conversationId)
+        .lt("created_at", oldestCreatedAtRef.current)
+        .order("created_at", { ascending: false })
+        .limit(PAGE_SIZE);
+
+      if (!data || data.length === 0) {
+        setHasMore(false);
+        return;
+      }
+
+      const older = (data as Message[]).reverse();
+      oldestCreatedAtRef.current = older[0].created_at;
+      if (data.length < PAGE_SIZE) setHasMore(false);
+
+      setMessages((prev) => [...older, ...prev]);
+
+      requestAnimationFrame(() => {
+        const newScrollHeight = document.documentElement.scrollHeight;
+        window.scrollBy(0, newScrollHeight - prevScrollHeight);
+      });
+    } catch {
+      // 네트워크 에러 시 조용히 무시 — 다음 스크롤에서 재시도
+    } finally {
+      setIsLoadingMore(false);
+    }
+  }, [isLoadingMore, hasMore, conversationId]);
+
+  // 유저 스크롤 감지: 올리면 isUserScrolling=true, 맨 아래 도달하면 false + 상단 감지
   useEffect(() => {
     function handleScroll() {
       const el = document.documentElement;
       const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
       setIsUserScrolling(distanceFromBottom > 80);
+
+      // 상단 100px 이내 도달 시 이전 메시지 로딩
+      if (el.scrollTop < 100) {
+        void loadMoreMessages();
+      }
     }
     window.addEventListener("scroll", handleScroll, { passive: true });
     return () => window.removeEventListener("scroll", handleScroll);
-  }, []);
+  }, [loadMoreMessages]);
 
   // 스트리밍 중 메시지 변경 시 자동 스크롤 (유저가 위로 올렸으면 스킵)
   useEffect(() => {
@@ -702,12 +721,26 @@ export default function ChatPage() {
             error?: string;
             freeBalance?: number;
             paidBalance?: number;
+            userMessageId?: string;
+            assistantMessageId?: string;
           };
           if (data.error) {
             setError(data.error);
           }
           if (data.done && typeof data.freeBalance === "number" && typeof data.paidBalance === "number") {
             updateCredits(data.freeBalance, data.paidBalance);
+          }
+          if (data.done) {
+            if (data.userMessageId) {
+              setMessages((prev) => prev.map((msg) =>
+                msg.id === userTempId ? { ...msg, id: data.userMessageId! } : msg
+              ));
+            }
+            if (data.assistantMessageId) {
+              setMessages((prev) => prev.map((msg) =>
+                msg.id === assistantTempId ? { ...msg, id: data.assistantMessageId! } : msg
+              ));
+            }
           }
           if (!data.text) return;
 
@@ -726,16 +759,11 @@ export default function ChatPage() {
             ));
           }
 
-          setMessages((prev) => {
-            const updated = [...prev];
-            for (let i = updated.length - 1; i >= 0; i--) {
-              if (updated[i].role === "assistant") {
-                updated[i] = { ...updated[i], content: updated[i].content + data.text };
-                break;
-              }
-            }
-            return updated;
-          });
+          setMessages((prev) => prev.map((m) =>
+            m.id === assistantTempId
+              ? { ...m, content: m.content + data.text }
+              : m
+          ));
         } catch {
           // ignore malformed SSE payloads
         }
@@ -920,6 +948,17 @@ export default function ChatPage() {
         </div>
 
         <div className="space-y-4 pb-36 md:pb-52">
+          {/* 이전 메시지 로딩 인디케이터 */}
+          {isLoadingMore && (
+            <p className="py-3 text-center text-[13px] text-[#999999]">
+              이전 메시지 불러오는 중...
+            </p>
+          )}
+          {!hasMore && messages.length > 0 && (
+            <p className="py-3 text-center text-[12px] text-[#BBBBBB]">
+              대화의 시작입니다
+            </p>
+          )}
           {messages.length === 0 ? (
             <p className="text-sm text-[#666666]">
               아직 메시지가 없습니다. 아래 입력창에 첫 메시지를 보내 보세요.
@@ -1056,7 +1095,7 @@ export default function ChatPage() {
                         className="chat-md min-w-0 break-words leading-7"
                       >
                         <MarkdownRenderer
-                          content={replaceVariables(m.content ?? "", userName).replaceAll("\n", "\n\n")}
+                          content={replaceVariables(m.content ?? "", userName)}
                           components={m.role === "user" ? userMdComponents : aiMdComponents}
                           className="leading-relaxed"
                         />

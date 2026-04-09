@@ -49,11 +49,23 @@ export default async function ExplorePage({
     },
   });
 
-  const { data } = await supabase
+  const PAGE_SIZE = 60;
+
+  // DB 레벨 검색 (ilike) + 페이지네이션
+  let characterQuery = supabase
     .from("characters")
     .select("id, name, description, thumbnail_url, model, user_id, usage_count, tags")
     .eq("visibility", "public")
-    .order("created_at", { ascending: false });
+    .order("created_at", { ascending: false })
+    .limit(PAGE_SIZE);
+
+  if (query) {
+    characterQuery = characterQuery.or(
+      `name.ilike.%${query}%,description.ilike.%${query}%`
+    );
+  }
+
+  const { data } = await characterQuery;
 
   const list = (data ?? []) as Omit<PublicCharacter, "author_nickname">[];
 
@@ -76,12 +88,13 @@ export default async function ExplorePage({
     author_nickname: authorMap[c.user_id] ?? "",
   }));
 
-  // 검색 필터 (이름, 제작자 닉네임, 태그)
+  // 태그 + 작성자 닉네임은 DB에서 직접 검색 불가하므로 enriched 후 추가 필터
   const filtered = query
     ? enrichedList.filter((c) => {
         const q = query.toLowerCase();
         return (
           c.name.toLowerCase().includes(q) ||
+          c.description?.toLowerCase().includes(q) ||
           c.author_nickname.toLowerCase().includes(q) ||
           (c.tags ?? []).some((t) => t.toLowerCase().includes(q))
         );
