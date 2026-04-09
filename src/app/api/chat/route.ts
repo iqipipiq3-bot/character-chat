@@ -123,7 +123,7 @@ const ALLOWED_MODELS = ["gemini-2.5-pro", "gemini-3.1-pro-preview", "gemma-4-31b
 const MODEL_COSTS: Record<string, number> = {
   "gemini-2.5-pro": 70,
   "gemini-3.1-pro-preview": 100,
-  "gemma-4-31b-it": 70,
+  "gemma-4-31b-it": 45,
 };
 
 const MODEL_CONFIG: Record<(typeof ALLOWED_MODELS)[number], ModelConfig> = {
@@ -149,7 +149,7 @@ const MODEL_CONFIG: Record<(typeof ALLOWED_MODELS)[number], ModelConfig> = {
     systemSuffix: "",
   },
   "gemma-4-31b-it": {
-    maxOutputTokens: 1500,
+    maxOutputTokens: 2500,
     temperature: 1.3,
     topP: 0.95,
     topK: 64,
@@ -157,7 +157,7 @@ const MODEL_CONFIG: Record<(typeof ALLOWED_MODELS)[number], ModelConfig> = {
     frequencyPenalty: null,
     thinkingBudget: null,
     thinkingLevel: null,
-    systemSuffix: "Output in Korean. Minimum 1,500 Korean characters. This is mandatory.",
+    systemSuffix: "",
   },
 };
 
