@@ -56,25 +56,25 @@ export function buildMemoryPrompt(memories: ConversationMemory[]): string {
   }
 
   if (relationship) {
-    const fields: Record<string, string> = {};
-    for (const line of relationship.content.split("\n")) {
-      const colonIdx = line.indexOf(":");
-      if (colonIdx === -1) continue;
-      const key = line.slice(0, colonIdx).trim();
-      const val = line.slice(colonIdx + 1).trim();
-      if (key && val) fields[key] = val;
+    type RelItem = { character_name?: string; emotion?: string; relationship?: string };
+    let items: RelItem[] = [];
+    try {
+      const parsed = JSON.parse(relationship.content);
+      if (Array.isArray(parsed)) items = parsed as RelItem[];
+    } catch {
+      // JSON 파싱 실패 → 기존 텍스트 형식 그대로 주입
+      sections.push(`[캐릭터 관계도]\n${relationship.content}`);
+      items = [];
     }
-    const charName = fields["character_name"] ?? "";
-    const charToUser = fields["캐릭터는 유저에게"] ?? "";
-    const userToChar = fields["유저는 캐릭터에게"] ?? "";
-    const emotion = fields["유저를 향한 감정"] ?? "";
 
-    const lines = [`- 캐릭터 이름: ${charName}`];
-    if (charToUser) lines.push(`  캐릭터는 유저에게: ${charToUser}`);
-    if (userToChar) lines.push(`  유저는 캐릭터에게: ${userToChar}`);
-    if (emotion) lines.push(`  유저를 향한 감정: ${emotion}`);
-
-    sections.push(`[캐릭터 관계도]\n${lines.join("\n")}`);
+    if (items.length > 0) {
+      const lines = items
+        .filter((it) => it.character_name?.trim())
+        .map((it) => `- ${it.character_name} | 유저를 향한 감정: ${it.emotion ?? ""} | 사이: ${it.relationship ?? ""}`);
+      if (lines.length > 0) {
+        sections.push(`[캐릭터 관계도]\n${lines.join("\n")}`);
+      }
+    }
   }
 
   if (sections.length === 0) return "";

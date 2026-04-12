@@ -29,7 +29,9 @@
       "Bash(npm uninstall:*)",
       "Bash(node --env-file=.env.local -e ':*)",
       "Bash(node --env-file=.env.local -e \"console.log\\('PROJECT:', process.env.GOOGLE_CLOUD_PROJECT_ID\\); console.log\\('LOCATION:', process.env.GOOGLE_CLOUD_LOCATION\\);\")",
-      "Bash(taskkill:*)"
+      "Bash(taskkill:*)",
+      "Bash(echo \"EXIT_CODE: $?\")",
+      "Bash(echo \"EXIT: $?\")"
     ]
   }
 }

@@ -46,98 +46,20 @@ function parseTurnStart(turnRange: string | null | undefined): number {
   return match ? parseInt(match[1], 10) : Infinity;
 }
 
-// content.split('\n')으로 줄 나누고 ':' 뒤 값 추출
-function parseRelationshipContent(content: string): Record<string, string> {
-  const result: Record<string, string> = {};
-  for (const line of content.split("\n")) {
-    const colonIdx = line.indexOf(":");
-    if (colonIdx === -1) continue;
-    const key = line.slice(0, colonIdx).trim();
-    const val = line.slice(colonIdx + 1).trim();
-    if (key && val) result[key] = val;
-  }
-  return result;
-}
-
-// ── 관계도 추가/수정 폼 ──────────────────────────────────────────────────────
-type RelationshipFormProps = {
-  initialCharName?: string;
-  initialCharToUser?: string;
-  initialUserToChar?: string;
-  initialEmotion?: string;
-  onSave: (content: string) => Promise<void>;
-  onCancel: () => void;
+type RelationshipItem = {
+  character_name: string;
+  emotion: string;
+  relationship: string;
 };
 
-function RelationshipForm({
-  initialCharName = "",
-  initialCharToUser = "",
-  initialUserToChar = "",
-  initialEmotion = "",
-  onSave,
-  onCancel,
-}: RelationshipFormProps) {
-  const [charName, setCharName] = useState(initialCharName);
-  const [charToUser, setCharToUser] = useState(initialCharToUser);
-  const [userToChar, setUserToChar] = useState(initialUserToChar);
-  const [emotion, setEmotion] = useState(initialEmotion);
-  const [saving, setSaving] = useState(false);
-
-  async function handleSave() {
-    if (!charName.trim() || saving) return;
-    setSaving(true);
-    try {
-      const content = `character_name:${charName.trim()}\n캐릭터는 유저에게:${charToUser.trim()}\n유저는 캐릭터에게:${userToChar.trim()}\n유저를 향한 감정:${emotion.trim()}`;
-      await onSave(content);
-    } finally {
-      setSaving(false);
-    }
+function parseRelationshipJson(content: string): RelationshipItem[] {
+  try {
+    const parsed = JSON.parse(content);
+    if (Array.isArray(parsed)) return parsed as RelationshipItem[];
+  } catch {
+    // ignore
   }
-
-  const fieldCls = "w-full rounded-lg border border-[#D0D0D0] bg-white px-3 py-1.5 text-xs text-[#1A1A1A] placeholder-[#BBBBBB] outline-none focus:border-[#1A1A2E]";
-  const labelCls = "w-24 shrink-0 text-[11px] text-[#AAAAAA]";
-
-  return (
-    <div className="mt-2 space-y-1.5">
-      <div className="flex items-center gap-2">
-        <span className={labelCls}>캐릭터 이름</span>
-        <input type="text" value={charName} onChange={(e) => setCharName(e.target.value)}
-          placeholder="이름 입력" autoFocus maxLength={50} className={fieldCls} />
-      </div>
-      <div className="flex items-center gap-2">
-        <span className={labelCls}>캐릭터→유저</span>
-        <input type="text" value={charToUser} onChange={(e) => setCharToUser(e.target.value)}
-          placeholder="캐릭터는 유저에게 어떤 사람?" maxLength={100} className={fieldCls} />
-      </div>
-      <div className="flex items-center gap-2">
-        <span className={labelCls}>유저→캐릭터</span>
-        <input type="text" value={userToChar} onChange={(e) => setUserToChar(e.target.value)}
-          placeholder="유저는 캐릭터에게 어떤 사람?" maxLength={100} className={fieldCls} />
-      </div>
-      <div className="flex items-center gap-2">
-        <span className={labelCls}>유저를 향한 감정</span>
-        <input type="text" value={emotion} onChange={(e) => setEmotion(e.target.value)}
-          placeholder="감정 입력" maxLength={100} className={fieldCls} />
-      </div>
-      <div className="flex justify-end gap-1.5 pt-0.5">
-        <button
-          type="button"
-          onClick={onCancel}
-          className="rounded-lg border border-[#D0D0D0] px-2.5 py-1 text-[11px] text-[#888888] hover:bg-[#F5F5F5]"
-        >
-          취소
-        </button>
-        <button
-          type="button"
-          disabled={saving || !charName.trim()}
-          onClick={() => void handleSave()}
-          className="rounded-lg bg-[#1A1A2E] px-2.5 py-1 text-[11px] font-medium text-white disabled:opacity-50"
-        >
-          {saving ? "저장 중..." : "저장"}
-        </button>
-      </div>
-    </div>
-  );
+  return [];
 }
 
 // ── 툴팁 아이콘 ───────────────────────────────────────────────────────────────
@@ -251,11 +173,17 @@ function SortableTimelineItem({
   return (
     <li ref={setNodeRef} style={style} className="py-2.5">
       {editingId === m.id ? (
-        <TimelineEditForm
-          initialValue={m.content}
-          onSave={(content) => handleSaveEdit(m.id, content)}
-          onCancel={() => setEditingId(null)}
-        />
+        (() => {
+          const parsed = parseTimelineTitle(m.content);
+          return (
+            <TimelineForm
+              initialTitle={parsed.title}
+              initialBody={parsed.body}
+              onSave={(content) => handleSaveEdit(m.id, content)}
+              onCancel={() => setEditingId(null)}
+            />
+          );
+        })()
       ) : (
         <div className="flex items-start gap-1.5">
           {/* 드래그 핸들 */}
@@ -413,87 +341,91 @@ function InlineEditForm({ initialValue, onSave, onCancel }: InlineEditFormProps)
   );
 }
 
-// ── 타임라인 수정 폼 ───────────────────────────────────────────────────────────
-type TimelineEditFormProps = {
-  initialValue: string;
+// ── [제목] 내용 파싱 헬퍼 ──────────────────────────────────────────────────────
+function parseTimelineTitle(content: string): { title: string; body: string } {
+  const match = /^\[([^\]]*)\]\s*([\s\S]*)$/.exec(content);
+  if (match) return { title: match[1], body: match[2] };
+  return { title: "", body: content };
+}
+
+// ── 타임라인 추가/수정 공용 폼 ────────────────────────────────────────────────
+type TimelineFormProps = {
+  initialTitle?: string;
+  initialBody?: string;
   onSave: (content: string) => Promise<void>;
   onCancel: () => void;
 };
 
-function TimelineEditForm({ initialValue, onSave, onCancel }: TimelineEditFormProps) {
-  const parts = initialValue.split("|").map((s) => s.trim());
-  const [turnRange, setTurnRange] = useState(parts[0] ?? "");
-  const [rpDate, setRpDate] = useState(parts[1] ?? "");
-  const [title, setTitle] = useState(parts.length >= 4 ? parts[2] : "");
-  const [body, setBody] = useState(parts.length >= 4 ? parts.slice(3).join(" | ") : (parts[2] ?? ""));
+function TimelineForm({ initialTitle = "", initialBody = "", onSave, onCancel }: TimelineFormProps) {
+  const [title, setTitle] = useState(initialTitle);
+  const [body, setBody] = useState(initialBody);
   const [saving, setSaving] = useState(false);
 
   async function handleSave() {
-    if (saving) return;
+    if (!body.trim() || saving) return;
     setSaving(true);
     try {
-      const content = [turnRange.trim(), rpDate.trim(), title.trim(), body.trim()]
-        .join(" | ");
+      const content = title.trim()
+        ? `[${title.trim()}] ${body.trim()}`
+        : body.trim();
       await onSave(content);
     } finally {
       setSaving(false);
     }
   }
 
-  const inputCls = "rounded-lg border border-[#D0D0D0] bg-white px-2 py-1.5 text-xs text-[#1A1A1A] placeholder-[#BBBBBB] outline-none focus:border-[#1A1A2E]";
+  const inputCls = "w-full rounded-lg border border-[#D0D0D0] bg-white px-3 py-1.5 text-xs text-[#1A1A1A] placeholder-[#BBBBBB] outline-none focus:border-[#1A1A2E]";
 
   return (
-    <div className="space-y-1.5">
-      <div className="flex gap-1.5">
-        <input
-          type="text"
-          value={turnRange}
-          onChange={(e) => setTurnRange(e.target.value)}
-          placeholder="1-5"
-          maxLength={20}
-          className={`${inputCls} w-16 shrink-0`}
-        />
-        <input
-          type="text"
-          value={rpDate}
-          onChange={(e) => setRpDate(e.target.value)}
-          placeholder="날짜"
-          maxLength={50}
-          className={`${inputCls} w-28 shrink-0`}
-        />
+    <div className="space-y-2">
+      <div>
+        <label className="text-[11px] text-[#AAAAAA]">제목</label>
         <input
           type="text"
           value={title}
           onChange={(e) => setTitle(e.target.value)}
-          placeholder="간단한 제목"
-          maxLength={50}
+          placeholder="예) 첫 만남"
+          maxLength={10}
           autoFocus
-          className={`${inputCls} min-w-0 flex-1`}
+          className={`${inputCls} mt-1`}
         />
+        <p className="mt-0.5 text-right text-[10px] text-[#CCCCCC]">{title.length}/10</p>
       </div>
-      <textarea
-        value={body}
-        onChange={(e) => setBody(e.target.value)}
-        rows={3}
-        maxLength={300}
-        placeholder="사건 내용 입력..."
-        className="w-full resize-none rounded-lg border border-[#D0D0D0] bg-white px-3 py-2 text-xs text-[#1A1A1A] placeholder-[#BBBBBB] outline-none focus:border-[#1A1A2E]"
-      />
-      <div className="flex gap-1.5">
-        <button
-          type="button"
-          disabled={saving}
-          onClick={() => void handleSave()}
-          className="rounded-lg bg-[#1A1A2E] px-2.5 py-1 text-[11px] font-medium text-white disabled:opacity-50"
-        >
-          {saving ? "저장 중..." : "저장"}
-        </button>
+      <div>
+        <label className="text-[11px] text-[#AAAAAA]">내용</label>
+        <textarea
+          value={body}
+          onChange={(e) => {
+            setBody(e.target.value);
+            const el = e.target;
+            el.style.height = "auto";
+            el.style.height = el.scrollHeight + "px";
+          }}
+          maxLength={200}
+          placeholder="사건 내용을 입력하세요..."
+          className="mt-1 w-full resize-none rounded-lg border border-[#D0D0D0] bg-white px-3 py-2 text-xs text-[#1A1A1A] placeholder-[#BBBBBB] outline-none focus:border-[#1A1A2E]"
+          style={{ minHeight: 60 }}
+          ref={(el) => {
+            if (el) { el.style.height = "auto"; el.style.height = el.scrollHeight + "px"; }
+          }}
+        />
+        <p className="mt-0.5 text-right text-[10px] text-[#CCCCCC]">{body.length}/200</p>
+      </div>
+      <div className="flex justify-end gap-1.5">
         <button
           type="button"
           onClick={onCancel}
           className="rounded-lg border border-[#D0D0D0] px-2.5 py-1 text-[11px] text-[#888888] hover:bg-[#F5F5F5]"
         >
           취소
+        </button>
+        <button
+          type="button"
+          disabled={saving || !body.trim()}
+          onClick={() => void handleSave()}
+          className="rounded-lg bg-[#1A1A2E] px-2.5 py-1 text-[11px] font-medium text-white disabled:opacity-50"
+        >
+          {saving ? "저장 중..." : "저장"}
         </button>
       </div>
     </div>
@@ -508,9 +440,12 @@ export function MemoryPanel({ conversationId, characterId, characterName, isOpen
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
-  const [addingSection, setAddingSection] = useState<"core_concept" | "timeline" | "relationship" | null>(null);
+  const [addingSection, setAddingSection] = useState<"core_concept" | "timeline" | null>(null);
   const [timelineExpanded, setTimelineExpanded] = useState(false);
   const [timelineOrder, setTimelineOrder] = useState<string[]>([]);
+  const [relationshipItems, setRelationshipItems] = useState<RelationshipItem[]>([]);
+  const [relationshipSaving, setRelationshipSaving] = useState(false);
+  const [relationshipMemoryId, setRelationshipMemoryId] = useState<string | null>(null);
 
   const dndSensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -552,6 +487,60 @@ export function MemoryPanel({ conversationId, characterId, characterName, isOpen
       return [...prevValid, ...newIds];
     });
   }, [memories]);
+
+  // relationship 메모리 → items 동기화
+  useEffect(() => {
+    const rel = memories
+      .filter((m) => m.memory_type === "relationship")
+      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0];
+    if (rel) {
+      setRelationshipItems(parseRelationshipJson(rel.content));
+      setRelationshipMemoryId(rel.id);
+    } else {
+      setRelationshipItems([]);
+      setRelationshipMemoryId(null);
+    }
+  }, [memories]);
+
+  const saveRelationshipItems = useCallback(async (items: RelationshipItem[]) => {
+    setRelationshipSaving(true);
+    try {
+      const nonEmpty = items.filter((it) => it.character_name.trim() || it.emotion.trim() || it.relationship.trim());
+      const content = JSON.stringify(nonEmpty);
+
+      if (nonEmpty.length === 0 && relationshipMemoryId) {
+        await fetch(`/api/memories/${conversationId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ memory_id: relationshipMemoryId, is_active: false }),
+        });
+        setMemories((prev) => prev.filter((m) => m.id !== relationshipMemoryId));
+        setRelationshipMemoryId(null);
+      } else if (nonEmpty.length > 0 && relationshipMemoryId) {
+        await fetch(`/api/memories/${conversationId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ memory_id: relationshipMemoryId, content }),
+        });
+        setMemories((prev) => prev.map((m) => m.id === relationshipMemoryId ? { ...m, content } : m));
+      } else if (nonEmpty.length > 0) {
+        const res = await fetch(`/api/memories/${conversationId}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ character_id: characterId, memory_type: "relationship", content, importance: 3 }),
+        });
+        if (res.ok) {
+          const json = (await res.json()) as { memory: Memory };
+          setMemories((prev) => [...prev, json.memory]);
+          setRelationshipMemoryId(json.memory.id);
+        }
+      }
+    } catch {
+      // 실패 시 조용히 무시
+    } finally {
+      setRelationshipSaving(false);
+    }
+  }, [conversationId, characterId, relationshipMemoryId, setMemories]);
 
   // ── API 액션 ────────────────────────────────────────────────────────────────
   async function handleAdd(type: string, content: string) {
@@ -636,24 +625,6 @@ export function MemoryPanel({ conversationId, characterId, characterName, isOpen
   const timelines = timelineOrder
     .map((id) => timelineMap.get(id))
     .filter((m): m is Memory => m !== undefined);
-  // character_name 기준 최신 1개만 표시 (히스토리 허용, 표시는 최신만)
-  const relationships = (() => {
-    const all = memories
-      .filter((m) => m.memory_type === "relationship")
-      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-    const seen = new Set<string>();
-    const result: Memory[] = [];
-    for (const m of all) {
-      const parsed = parseRelationshipContent(m.content);
-      const charKey = (parsed["character_name"] ?? "").trim() || m.id;
-      if (!seen.has(charKey)) {
-        seen.add(charKey);
-        result.push(m);
-      }
-    }
-    return result;
-  })();
-
   const coreConceptFull = coreConcepts.length >= CORE_CONCEPT_MAX;
   const timelineFull = timelines.length >= TIMELINE_MAX;
 
@@ -823,11 +794,12 @@ export function MemoryPanel({ conversationId, characterId, characterName, isOpen
                 </div>
 
                 {addingSection === "timeline" && (
-                  <InlineAddForm
-                    placeholder="사건 내용을 입력하세요... (예: 1-5 | 3월 15일 | 처음 만난 날)"
-                    onSave={(content) => handleAdd("timeline", content)}
-                    onCancel={() => setAddingSection(null)}
-                  />
+                  <div className="mt-2">
+                    <TimelineForm
+                      onSave={(content) => handleAdd("timeline", content)}
+                      onCancel={() => setAddingSection(null)}
+                    />
+                  </div>
                 )}
 
                 {timelines.length === 0 && addingSection !== "timeline" ? (
@@ -887,120 +859,78 @@ export function MemoryPanel({ conversationId, characterId, characterName, isOpen
 
               {/* ── 섹션 3: 캐릭터 관계도 ── */}
               <section className="px-4 py-4">
-                {/* 헤더 */}
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-1.5">
                     <p className="text-[11px] font-semibold tracking-wide text-[#888888]">캐릭터 관계도</p>
-                    <TooltipIcon text={"캐릭터와 유저의 현재 관계 상태.\n매 턴 자동으로 업데이트되며 항상 AI에게 전달됩니다."} />
-                    {relationships.length > 0 && (
-                      <span className="rounded-full bg-[#EBEBEB] px-1.5 py-0.5 text-[10px] font-medium text-[#888888]">
-                        {relationships.length}
-                      </span>
-                    )}
+                    <TooltipIcon text={"캐릭터와 유저의 관계를 직접 입력해주세요.\n매 턴 대화에 반영됩니다."} />
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => setAddingSection((v) => v === "relationship" ? null : "relationship")}
-                    className={`flex h-5 w-5 items-center justify-center rounded transition-colors ${
-                      addingSection === "relationship"
-                        ? "bg-[#EBEBEB] text-[#555555]"
-                        : "text-[#AAAAAA] hover:bg-[#EBEBEB] hover:text-[#555555]"
-                    }`}
-                    title="추가"
-                  >
-                    <PlusIcon />
-                  </button>
+                  <div className="flex items-center gap-2">
+                    {relationshipSaving && (
+                      <span className="text-[10px] text-[#AAAAAA]">저장 중...</span>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const next = [...relationshipItems, { character_name: "", emotion: "", relationship: "" }];
+                        setRelationshipItems(next);
+                      }}
+                      className="flex items-center gap-0.5 rounded-lg border border-[#D0D0D0] px-2 py-0.5 text-[11px] text-[#888888] hover:bg-[#F5F5F5]"
+                    >
+                      <PlusIcon />
+                      <span>캐릭터 추가</span>
+                    </button>
+                  </div>
                 </div>
 
-                {/* 추가 폼 */}
-                {addingSection === "relationship" && (
-                  <RelationshipForm
-                    onSave={(content) => handleAdd("relationship", content)}
-                    onCancel={() => setAddingSection(null)}
-                  />
-                )}
-
-                {/* 목록 */}
-                {relationships.length === 0 && addingSection !== "relationship" ? (
-                  <p className="mt-2 text-[11px] text-[#CCCCCC]">아직 기억이 없습니다.</p>
+                {relationshipItems.length === 0 ? (
+                  <p className="mt-2 text-[11px] text-[#CCCCCC]">아직 관계 정보가 없습니다.</p>
                 ) : (
-                  <ul className="mt-2 divide-y divide-[#F0F0F0]">
-                    {relationships.map((m) => {
-                      const parsed = parseRelationshipContent(m.content);
-                      const charNameParsed = parsed["character_name"] ?? "";
-                      const charToUser = parsed["캐릭터는 유저에게"] ?? "";
-                      const userToChar = parsed["유저는 캐릭터에게"] ?? "";
-                      const emotion = parsed["유저를 향한 감정"] ?? "";
+                  <div className="mt-2 space-y-2">
+                    {relationshipItems.map((item, idx) => {
+                      const fieldCls = "w-full rounded-lg border border-[#D0D0D0] bg-white px-2.5 py-1.5 text-xs text-[#1A1A1A] placeholder-[#BBBBBB] outline-none focus:border-[#1A1A2E]";
+                      const labelCls = "w-[7.5rem] shrink-0 text-[11px] text-[#AAAAAA]";
+
+                      function updateField(field: keyof RelationshipItem, value: string) {
+                        setRelationshipItems((prev) => prev.map((it, i) => i === idx ? { ...it, [field]: value } : it));
+                      }
 
                       return (
-                        <li key={m.id} className="py-2.5">
-                          {editingId === m.id ? (
-                            <RelationshipForm
-                              initialCharName={charNameParsed}
-                              initialCharToUser={charToUser}
-                              initialUserToChar={userToChar}
-                              initialEmotion={emotion}
-                              onSave={(content) => handleSaveEdit(m.id, content)}
-                              onCancel={() => setEditingId(null)}
-                            />
-                          ) : (
-                            <div className="relative">
-                              {/* 수정/삭제 */}
-                              <div className="absolute right-0 top-0 flex items-center gap-0.5">
-                                <button
-                                  type="button"
-                                  onClick={() => setEditingId(m.id)}
-                                  className="flex h-6 w-6 items-center justify-center rounded text-[#AAAAAA] hover:bg-[#EBEBEB] hover:text-[#555555]"
-                                  title="수정"
-                                >
-                                  <PencilIcon />
-                                </button>
-                                <button
-                                  type="button"
-                                  disabled={deletingId === m.id}
-                                  onClick={() => void handleDelete(m.id)}
-                                  className="flex h-6 w-6 items-center justify-center rounded text-[#AAAAAA] hover:bg-red-50 hover:text-red-500 disabled:opacity-40"
-                                  title="삭제"
-                                >
-                                  {deletingId === m.id ? <span className="text-[10px]">...</span> : <XIcon />}
-                                </button>
-                              </div>
-
-                              {/* 플랫 표시 */}
-                              <dl className="space-y-1 pr-14">
-                                <div className="flex gap-1.5">
-                                  <dt className="shrink-0 text-[11px] text-[#AAAAAA]">캐릭터 이름:</dt>
-                                  <dd className="text-[11px] font-medium text-[#1A1A1A]">{charNameParsed || "—"}</dd>
-                                </div>
-                                <div className="mt-1 text-[11px] text-[#AAAAAA]">유저와의 관계</div>
-                                {charToUser && (
-                                  <div className="flex gap-1.5 pl-2">
-                                    <dt className="shrink-0 text-[11px] text-[#AAAAAA]">캐릭터는 유저에게:</dt>
-                                    <dd className="text-[11px] text-[#333333]">{charToUser}</dd>
-                                  </div>
-                                )}
-                                {userToChar && (
-                                  <div className="flex gap-1.5 pl-2">
-                                    <dt className="shrink-0 text-[11px] text-[#AAAAAA]">유저는 캐릭터에게:</dt>
-                                    <dd className="text-[11px] text-[#333333]">{userToChar}</dd>
-                                  </div>
-                                )}
-                                {emotion && (
-                                  <div className="flex gap-1.5">
-                                    <dt className="shrink-0 text-[11px] text-[#AAAAAA]">유저를 향한 감정:</dt>
-                                    <dd className="text-[11px] text-[#333333]">{emotion}</dd>
-                                  </div>
-                                )}
-                                {!charToUser && !userToChar && !emotion && (
-                                  <dd className="text-[11px] text-[#333333]">{m.content}</dd>
-                                )}
-                              </dl>
-                            </div>
-                          )}
-                        </li>
+                        <div key={idx} className="rounded-lg border border-[#E8E8E8] bg-[#F8F8F8] px-3 py-2.5 space-y-1.5">
+                          <div className="flex items-center gap-2">
+                            <span className={labelCls}>캐릭터 이름</span>
+                            <input type="text" value={item.character_name} onChange={(e) => updateField("character_name", e.target.value)}
+                              onBlur={() => void saveRelationshipItems(relationshipItems)}
+                              placeholder="예) 철수" maxLength={50} className={fieldCls} />
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className={labelCls}>유저를 향한 감정</span>
+                            <input type="text" value={item.emotion} onChange={(e) => updateField("emotion", e.target.value)}
+                              onBlur={() => void saveRelationshipItems(relationshipItems)}
+                              placeholder="예) 집착하는 사랑" maxLength={50} className={fieldCls} />
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className={labelCls}>캐릭터와 유저의 사이</span>
+                            <input type="text" value={item.relationship} onChange={(e) => updateField("relationship", e.target.value)}
+                              onBlur={() => void saveRelationshipItems(relationshipItems)}
+                              placeholder="예) 연인" maxLength={50} className={fieldCls} />
+                          </div>
+                          <div className="flex justify-end">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const next = relationshipItems.filter((_, i) => i !== idx);
+                                setRelationshipItems(next);
+                                void saveRelationshipItems(next);
+                              }}
+                              className="rounded-lg px-2 py-0.5 text-[11px] text-[#AAAAAA] hover:bg-red-50 hover:text-red-500"
+                            >
+                              삭제
+                            </button>
+                          </div>
+                        </div>
                       );
                     })}
-                  </ul>
+                  </div>
                 )}
               </section>
 

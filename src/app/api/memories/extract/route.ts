@@ -35,7 +35,7 @@ type PostBody = {
 };
 
 type ExtractedMemory = {
-  type: "core_concept" | "timeline" | "relationship";
+  type: "core_concept" | "timeline";
   content: string;
   importance: number;
   rp_date?: string;
@@ -43,7 +43,7 @@ type ExtractedMemory = {
 };
 
 const SYSTEM_PROMPT = `You are a memory extraction assistant for a character roleplay chat application.
-Analyze the given conversation and extract memories in exactly three types.
+Analyze the given conversation and extract memories in exactly two types.
 Output ONLY a valid JSON array with no explanation, markdown, or code fences.
 
 === TYPE DEFINITIONS ===
@@ -63,15 +63,9 @@ Output ONLY a valid JSON array with no explanation, markdown, or code fences.
    - importance: 4 or 5
    - MUST be exactly 1 item. Do not extract 0 or 2+ timeline entries.
 
-3. relationship (관계도)
-   - Extract EXACTLY 1 entry describing the current relationship status between the character and the user.
-   - Includes: emotional bond, trust level, affection, tension, dynamic (e.g. "적대 → 호감으로 변화 중").
-   - importance: 3, 4, or 5
-   - MUST be exactly 1 item.
-
 === OUTPUT FORMAT ===
 Each item must have these fields:
-- type: "core_concept" | "timeline" | "relationship"
+- type: "core_concept" | "timeline"
 - content: Korean string, concise
 - importance: number 1–5
 - rp_date: string (required for timeline, use "알 수 없음" if unknown; omit for other types)
@@ -81,8 +75,7 @@ Each item must have these fields:
 [
   {"type":"core_concept","content":"배경은 19세기 말 유럽풍 귀족 사회이며, 캐릭터는 공작 가문의 장남이다.","importance":5},
   {"type":"core_concept","content":"유저는 신분을 숨긴 채 가정교사로 저택에 들어온 평민 출신이다.","importance":5},
-  {"type":"timeline","content":"1~10턴 | 알 수 없음 | 캐릭터와 유저가 처음 만나 신경전을 벌이며 서로를 탐색했다.","importance":4,"rp_date":"알 수 없음","turn_range":"1-10"},
-  {"type":"relationship","content":"초면임에도 캐릭터가 유저에게 묘한 흥미를 느끼고 있으며, 유저는 경계심을 유지 중이다.","importance":4}
+  {"type":"timeline","content":"1~10턴 | 알 수 없음 | 캐릭터와 유저가 처음 만나 신경전을 벌이며 서로를 탐색했다.","importance":4,"rp_date":"알 수 없음","turn_range":"1-10"}
 ]`;
 
 export async function POST(request: NextRequest) {
@@ -160,35 +153,25 @@ export async function POST(request: NextRequest) {
 
     // ── conversation_memories 타입별 저장 ────────────────────────────────────
 
-    // 1. timeline 중복 체크 + relationship 비활성화 (사전 준비)
+    // 1. timeline 중복 체크
     const timelineMemories = memories.filter((m) => m.type === "timeline" && m.turn_range);
-    const hasRelationship = memories.some((m) => m.type === "relationship");
 
-    const [timelineDupCheck] = await Promise.all([
-      timelineMemories.length > 0
-        ? supabase
-            .from("conversation_memories")
-            .select("turn_range")
-            .eq("conversation_id", conversation_id)
-            .eq("type", "timeline")
-            .in("turn_range", timelineMemories.map((m) => m.turn_range!))
-        : Promise.resolve({ data: [] as { turn_range: string }[] }),
-      hasRelationship
-        ? supabase
-            .from("conversation_memories")
-            .update({ is_active: false })
-            .eq("conversation_id", conversation_id)
-            .eq("type", "relationship")
-            .eq("is_active", true)
-        : Promise.resolve(null),
-    ]);
+    const timelineDupCheck = timelineMemories.length > 0
+      ? await supabase
+          .from("conversation_memories")
+          .select("turn_range")
+          .eq("conversation_id", conversation_id)
+          .eq("type", "timeline")
+          .in("turn_range", timelineMemories.map((m) => m.turn_range!))
+      : { data: [] as { turn_range: string }[] };
 
     const existingTurnRanges = new Set(
       (timelineDupCheck.data ?? []).map((r) => (r as { turn_range: string }).turn_range)
     );
 
-    // 2. 중복 제외 후 병렬 insert
+    // 2. relationship 제외 + 중복 제외 후 병렬 insert
     const toInsert = memories.filter((m) => {
+      if (m.type !== "core_concept" && m.type !== "timeline") return false;
       if (m.type === "timeline" && m.turn_range && existingTurnRanges.has(m.turn_range)) {
         return false;
       }
