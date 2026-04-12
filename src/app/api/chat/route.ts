@@ -73,6 +73,9 @@ type PostBody = {
   user_note?: string;
   persona_content?: string;
   persona_name?: string;
+  isReroll?: boolean;
+  rerollGroupId?: string;
+  rerollIndex?: number;
 };
 
 type ModelConfig = {
@@ -640,6 +643,10 @@ export async function POST(request: NextRequest) {
       }
       if (memoryBlock) contextPrefix.push(memoryBlock);
 
+      if (body.isReroll) {
+        contextPrefix.push("[Note: Generate a different response. Vary approach and style.]");
+      }
+
       if (contextPrefix.length > 0) {
         const lastUserIdx = conversationParts.length - 1;
         conversationParts[lastUserIdx] = {
@@ -761,33 +768,61 @@ export async function POST(request: NextRequest) {
           const assistantTime = new Date(now.getTime() + 1);
 
           // ── 메시지 저장 ───────────────────────────────────────────────────
+          const isReroll = body.isReroll === true && body.rerollGroupId;
+          const rerollGroupId = isReroll ? body.rerollGroupId : crypto.randomUUID();
+          const rerollIndex = isReroll ? (body.rerollIndex ?? 0) + 1 : 1;
+
+          const messagesToInsert = isReroll
+            ? [
+                {
+                  user_id: user.id,
+                  character_id: characterId,
+                  conversation_id: conversationId,
+                  role: "assistant" as const,
+                  content: finalReply,
+                  model: modelId,
+                  prompt_tokens: promptTokens,
+                  completion_tokens: completionTokens,
+                  thinking_tokens: thinkingTokens,
+                  total_tokens: totalTokens,
+                  cached_tokens: cachedPromptTokens ?? 0,
+                  estimated_cost_usd: estimatedCost,
+                  created_at: assistantTime.toISOString(),
+                  reroll_group_id: rerollGroupId,
+                  reroll_index: rerollIndex,
+                },
+              ]
+            : [
+                {
+                  user_id: user.id,
+                  character_id: characterId,
+                  conversation_id: conversationId,
+                  role: "user" as const,
+                  content: message,
+                  created_at: now.toISOString(),
+                },
+                {
+                  user_id: user.id,
+                  character_id: characterId,
+                  conversation_id: conversationId,
+                  role: "assistant" as const,
+                  content: finalReply,
+                  model: modelId,
+                  prompt_tokens: promptTokens,
+                  completion_tokens: completionTokens,
+                  thinking_tokens: thinkingTokens,
+                  total_tokens: totalTokens,
+                  cached_tokens: cachedPromptTokens ?? 0,
+                  estimated_cost_usd: estimatedCost,
+                  created_at: assistantTime.toISOString(),
+                  reroll_group_id: rerollGroupId,
+                  reroll_index: rerollIndex,
+                },
+              ];
+
           const { data: insertedMessages, error: insertError } = await supabase
             .from("messages")
-            .insert([
-              {
-                user_id: user.id,
-                character_id: characterId,
-                conversation_id: conversationId,
-                role: "user",
-                content: message,
-                created_at: now.toISOString(),
-              },
-              {
-                user_id: user.id,
-                character_id: characterId,
-                conversation_id: conversationId,
-                role: "assistant",
-                content: finalReply,
-                model: modelId,
-                prompt_tokens: promptTokens,
-                completion_tokens: completionTokens,
-                thinking_tokens: thinkingTokens,
-                total_tokens: totalTokens,
-                cached_tokens: cachedPromptTokens ?? 0,
-                estimated_cost_usd: estimatedCost,
-                created_at: assistantTime.toISOString(),
-              },
-            ])
+            .insert(messagesToInsert)
             .select("id");
 
           // ── insert 실패 시 크레딧 차감 없이 에러 반환 ───────────────────
@@ -804,10 +839,11 @@ export async function POST(request: NextRequest) {
             return;
           }
 
-          const userMessageId =
-            (insertedMessages as Array<{ id: string }> | null)?.[0]?.id ?? null;
-          const assistantMessageId =
-            (insertedMessages as Array<{ id: string }> | null)?.[1]?.id ?? null;
+          const insertedArr = (insertedMessages as Array<{ id: string }> | null) ?? [];
+          const userMessageId = isReroll ? null : (insertedArr[0]?.id ?? null);
+          const assistantMessageId = isReroll
+            ? (insertedArr[0]?.id ?? null)
+            : (insertedArr[1]?.id ?? null);
 
           // ── 크레딧 차감 (optimistic locking: re-read → conditional update) ──
           const { data: freshCredits } = await supabase
@@ -900,6 +936,8 @@ export async function POST(request: NextRequest) {
                 paidBalance: newPaidBalance,
                 userMessageId,
                 assistantMessageId,
+                rerollGroupId: rerollGroupId,
+                rerollIndex: rerollIndex,
               })}\n\n`
             )
           );

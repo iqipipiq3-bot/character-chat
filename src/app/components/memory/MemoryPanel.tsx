@@ -157,7 +157,7 @@ function TooltipIcon({ text }: { text: string }) {
         ?
       </button>
       {visible && (
-        <span className="absolute left-5 top-0 z-50 rounded-lg bg-[#1A1A1A] px-3 py-2 text-[11px] leading-relaxed text-white shadow-lg" style={{ width: "max-content", maxWidth: "220px", whiteSpace: "normal" }}>
+        <span className="absolute left-0 rounded-lg bg-[#1A1A1A] px-3 py-2 leading-relaxed text-white shadow-lg" style={{ top: "calc(100% + 4px)", width: 200, maxWidth: "calc(100vw - 32px)", whiteSpace: "normal", wordBreak: "keep-all", fontSize: 12, zIndex: 9999 }}>
           {text.split("\n").map((line, i) => (
             <span key={i} className="block">{line}</span>
           ))}

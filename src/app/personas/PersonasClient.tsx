@@ -7,6 +7,7 @@ import { createSupabaseBrowserClient } from "../lib/supabase";
 type Persona = {
   id: string;
   name: string;
+  description: string;
   content: string;
   is_default: boolean;
   created_at: string;
@@ -17,6 +18,7 @@ export function PersonasClient({ initial, userId }: { initial: Persona[]; userId
   const [personas, setPersonas] = useState<Persona[]>(initial);
   const [editingId, setEditingId] = useState<string | "new" | null>(null);
   const [editName, setEditName] = useState("");
+  const [editDescription, setEditDescription] = useState("");
   const [editContent, setEditContent] = useState("");
   const [saving, setSaving] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -24,24 +26,28 @@ export function PersonasClient({ initial, userId }: { initial: Persona[]; userId
   function startAdd() {
     setEditingId("new");
     setEditName("");
+    setEditDescription("");
     setEditContent("");
   }
 
   function startEdit(p: Persona) {
     setEditingId(p.id);
     setEditName(p.name);
+    setEditDescription(p.description ?? "");
     setEditContent(p.content);
   }
 
   function cancelEdit() {
     setEditingId(null);
     setEditName("");
+    setEditDescription("");
     setEditContent("");
   }
 
   async function handleSave() {
     if (saving) return;
     const name = editName.trim();
+    const description = editDescription.trim();
     const content = editContent.trim();
     if (!name || !content) {
       window.alert("이름과 내용을 모두 입력해주세요.");
@@ -53,7 +59,7 @@ export function PersonasClient({ initial, userId }: { initial: Persona[]; userId
       if (editingId === "new") {
         const { data, error } = await supabase
           .from("personas")
-          .insert({ user_id: userId, name, content, is_default: false })
+          .insert({ user_id: userId, name, description, content, is_default: false })
           .select()
           .single();
         if (error) throw error;
@@ -61,11 +67,11 @@ export function PersonasClient({ initial, userId }: { initial: Persona[]; userId
       } else {
         const { error } = await supabase
           .from("personas")
-          .update({ name, content })
+          .update({ name, description, content })
           .eq("id", editingId);
         if (error) throw error;
         setPersonas((prev) =>
-          prev.map((p) => (p.id === editingId ? { ...p, name, content } : p))
+          prev.map((p) => (p.id === editingId ? { ...p, name, description, content } : p))
         );
       }
       cancelEdit();
@@ -181,6 +187,19 @@ export function PersonasClient({ initial, userId }: { initial: Persona[]; userId
                 {editName.length}/20
               </span>
             </div>
+            <div className="relative mb-2">
+              <input
+                type="text"
+                value={editDescription}
+                onChange={(e) => setEditDescription(e.target.value)}
+                maxLength={50}
+                placeholder="이 페르소나를 한 줄로 설명해주세요"
+                className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-zinc-400 dark:border-zinc-700 dark:bg-zinc-950 dark:focus:border-zinc-500"
+              />
+              <span className="pointer-events-none absolute bottom-2 right-3 text-[11px] text-zinc-400">
+                {editDescription.length}/50
+              </span>
+            </div>
             <div className="relative">
               <textarea
                 value={editContent}
@@ -227,6 +246,19 @@ export function PersonasClient({ initial, userId }: { initial: Persona[]; userId
                         {editName.length}/20
                       </span>
                     </div>
+                    <div className="relative mb-2">
+                      <input
+                        type="text"
+                        value={editDescription}
+                        onChange={(e) => setEditDescription(e.target.value)}
+                        maxLength={50}
+                        placeholder="이 페르소나를 한 줄로 설명해주세요"
+                        className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-zinc-400 dark:border-zinc-700 dark:bg-zinc-950 dark:focus:border-zinc-500"
+                      />
+                      <span className="pointer-events-none absolute bottom-2 right-3 text-[11px] text-zinc-400">
+                        {editDescription.length}/50
+                      </span>
+                    </div>
                     <div className="relative">
                       <textarea
                         value={editContent}
@@ -253,6 +285,11 @@ export function PersonasClient({ initial, userId }: { initial: Persona[]; userId
                           </span>
                         )}
                       </div>
+                      {persona.description && (
+                        <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-500">
+                          {persona.description}
+                        </p>
+                      )}
                       <p className="mt-1 line-clamp-2 text-xs text-zinc-600 dark:text-zinc-400">
                         {persona.content}
                       </p>

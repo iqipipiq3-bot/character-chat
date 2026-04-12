@@ -1,10 +1,11 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 
 export type Persona = {
   id: string;
   name: string;
+  description?: string;
   content: string;
   is_default: boolean;
 };
@@ -55,6 +56,7 @@ type Props = {
   fontSettings: FontSettings;
   onFontSettingsChange: (s: FontSettings) => void;
   onEditPersonasClick: () => void;
+  onSessionContentChange: (content: string) => void;
 };
 
 export function ChatSidePanel({
@@ -68,15 +70,55 @@ export function ChatSidePanel({
   fontSettings,
   onFontSettingsChange,
   onEditPersonasClick,
+  onSessionContentChange,
 }: Props) {
   const [tab, setTab] = useState<"persona" | "note" | "font">("persona");
   const [draftNote, setDraftNote] = useState(userNote);
   const [noteSaved, setNoteSaved] = useState(false);
 
+  const [sessionContent, setSessionContent] = useState<string>('');
+  const [isEditing, setIsEditing] = useState(false);
+  const [originalContent, setOriginalContent] = useState<string>('');
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+  const [tooltipOpen, setTooltipOpen] = useState(false);
+  const tooltipRef = useRef<HTMLDivElement>(null);
+
   // 외부에서 userNote가 바뀌면(초기 로드) draft도 동기화
   useEffect(() => {
     setDraftNote(userNote);
   }, [userNote]);
+
+  // 드롭다운 외부 클릭 닫기
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setDropdownOpen(false);
+      }
+      if (tooltipRef.current && !tooltipRef.current.contains(e.target as Node)) {
+        setTooltipOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, []);
+
+  // 페르소나 변경 시 sessionContent / originalContent 동기화
+  useEffect(() => {
+    if (activePersonaId) {
+      const p = personas.find((p) => p.id === activePersonaId);
+      const content = p?.content ?? '';
+      setSessionContent(content);
+      setOriginalContent(content);
+      onSessionContentChange(content);
+    } else {
+      setSessionContent('');
+      setOriginalContent('');
+      onSessionContentChange('');
+    }
+    setIsEditing(false);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activePersonaId, personas]);
 
   function handleNoteSave() {
     onUserNoteChange(draftNote);
@@ -141,7 +183,7 @@ export function ChatSidePanel({
           {tab === "persona" && (
             <div className="space-y-4">
               <div className="flex items-center justify-between">
-                <p className="text-xs font-semibold text-[#666666]">현재 적용</p>
+                <p className="text-xs font-semibold text-[#666666]">페르소나 선택</p>
                 <button
                   type="button"
                   onClick={onEditPersonasClick}
@@ -150,47 +192,158 @@ export function ChatSidePanel({
                   페르소나 수정
                 </button>
               </div>
-              <div className="rounded-lg border border-[#E0E0E0] bg-[#F8F8F8] px-3 py-2 text-sm text-[#333333]">
-                {activePersona?.name ?? "기본값 (자동 선택)"}
-              </div>
-
-              <p className="text-xs font-semibold text-[#666666]">선택</p>
-              <div className="space-y-1.5">
+              <div className="relative" ref={dropdownRef}>
                 <button
                   type="button"
-                  onClick={() => onSelectPersona(null)}
-                  className={`w-full rounded-lg px-3 py-2 text-left text-sm font-medium transition-colors ${
-                    activePersonaId === null
-                      ? "bg-[#1A1A2E] text-white"
-                      : "border border-[#E0E0E0] text-[#333333] hover:bg-[#F8F8F8]"
-                  }`}
+                  onClick={() => setDropdownOpen((v) => !v)}
+                  className="flex w-full items-center justify-between rounded-lg border border-[#E0E0E0] bg-white px-3 py-2 text-sm text-[#333333] hover:bg-[#F8F8F8]"
                 >
-                  기본값 사용
+                  <span>{activePersona?.name ?? "기본값 사용"}</span>
+                  <svg
+                    width="12" height="12" viewBox="0 0 12 12" fill="none"
+                    className={`shrink-0 text-[#999999] transition-transform ${dropdownOpen ? "rotate-180" : ""}`}
+                  >
+                    <path d="M2.5 4.5L6 8L9.5 4.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
                 </button>
-                {personas.length === 0 ? (
-                  <p className="py-2 text-center text-xs text-[#999999]">
-                    저장된 페르소나가 없습니다.
-                  </p>
-                ) : (
-                  personas.map((p) => (
+
+                {dropdownOpen && (
+                  <div className="absolute left-0 right-0 top-full z-10 mt-1 max-h-64 overflow-y-auto rounded-lg border border-[#E0E0E0] bg-white shadow-lg">
+                    {/* 기본값 사용 */}
                     <button
-                      key={p.id}
                       type="button"
-                      onClick={() => onSelectPersona(p.id)}
-                      className={`w-full rounded-lg px-3 py-2 text-left text-sm transition-colors ${
-                        activePersonaId === p.id
-                          ? "bg-[#1A1A2E] text-white"
-                          : "border border-[#E0E0E0] text-[#333333] hover:bg-[#F8F8F8]"
-                      }`}
+                      onClick={() => { onSelectPersona(null); setDropdownOpen(false); }}
+                      className="flex w-full items-center justify-between px-4 py-3 text-left hover:bg-[#F8F8F8]"
                     >
-                      {p.name}
-                      {p.is_default && (
-                        <span className="ml-1.5 text-xs opacity-60">(기본)</span>
+                      <span className="text-sm font-medium text-[#333333]">기본값 사용</span>
+                      {activePersonaId === null && (
+                        <svg width="14" height="14" viewBox="0 0 14 14" fill="none" className="shrink-0 text-[#1A1A2E]">
+                          <path d="M2.5 7L5.5 10L11.5 4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                        </svg>
                       )}
                     </button>
-                  ))
+
+                    {personas.map((p) => (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() => { onSelectPersona(p.id); setDropdownOpen(false); }}
+                        className="flex w-full items-center justify-between border-t border-[#F0F0F0] px-4 py-3 text-left hover:bg-[#F8F8F8]"
+                      >
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-medium text-[#333333]">
+                            {p.name}
+                            {p.is_default && <span className="ml-1.5 text-xs text-[#999999]">(기본)</span>}
+                          </p>
+                          {p.description && (
+                            <p className="mt-0.5 truncate text-xs text-[#999999]">{p.description}</p>
+                          )}
+                        </div>
+                        {activePersonaId === p.id && (
+                          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" className="ml-2 shrink-0 text-[#1A1A2E]">
+                            <path d="M2.5 7L5.5 10L11.5 4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                          </svg>
+                        )}
+                      </button>
+                    ))}
+                  </div>
                 )}
               </div>
+
+              {/* 페르소나 내용 표시/편집 영역 */}
+              {(activePersonaId || activePersona) && (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1.5">
+                      <p className="text-xs font-semibold text-[#666666]">페르소나 내용</p>
+                      <div className="relative" ref={tooltipRef}>
+                        <button
+                          type="button"
+                          onClick={() => setTooltipOpen((v) => !v)}
+                          onMouseEnter={() => setTooltipOpen(true)}
+                          onMouseLeave={() => setTooltipOpen(false)}
+                          className="flex h-4 w-4 cursor-help items-center justify-center rounded-full border border-[#CCCCCC] text-[10px] font-medium leading-none text-[#999999]"
+                        >
+                          ?
+                        </button>
+                        {tooltipOpen && (
+                          <div className="absolute left-0 rounded-lg bg-[#1A1A2E] px-3 py-2.5 leading-relaxed text-white shadow-lg" style={{ top: "calc(100% + 4px)", width: 200, maxWidth: "calc(100vw - 32px)", whiteSpace: "normal", wordBreak: "keep-all", fontSize: 12, zIndex: 9999 }}>
+                            저장된 페르소나를 불러와 현재 채팅방에서만 적용됩니다.
+                            여기서 수정해도 원본 페르소나는 변경되지 않습니다.
+                            원본 수정은 페르소나 관리 페이지에서 해주세요.
+                          </div>
+                        )}
+                      </div>
+                      {sessionContent !== originalContent && (
+                        <span className="rounded-full bg-orange-100 px-2 py-0.5 text-[10px] font-medium text-orange-600">
+                          세션 수정 중
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      {!isEditing && sessionContent !== originalContent && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSessionContent(originalContent);
+                            onSessionContentChange(originalContent);
+                          }}
+                          className="text-[10px] text-[#999999] underline underline-offset-2 hover:text-[#666666]"
+                        >
+                          초기화
+                        </button>
+                      )}
+                      {!isEditing && (
+                        <button
+                          type="button"
+                          onClick={() => setIsEditing(true)}
+                          className="rounded-md border border-[#E0E0E0] bg-white px-2 py-0.5 text-[10px] text-[#666666] hover:bg-[#F0F0F0]"
+                        >
+                          편집
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {isEditing ? (
+                    <div className="space-y-2">
+                      <textarea
+                        value={sessionContent}
+                        onChange={(e) => setSessionContent(e.target.value)}
+                        className="w-full resize-none rounded-lg border border-[#E0E0E0] bg-white px-3 py-2 text-xs outline-none focus:border-[#666666]"
+                        style={{ minHeight: 300 }}
+                      />
+                      <div className="flex gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            onSessionContentChange(sessionContent);
+                            setIsEditing(false);
+                          }}
+                          className="flex-1 rounded-lg bg-[#1A1A2E] py-1.5 text-xs font-medium text-white hover:bg-[#141424]"
+                        >
+                          저장
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSessionContent(originalContent);
+                            onSessionContentChange(originalContent);
+                            setIsEditing(false);
+                          }}
+                          className="flex-1 rounded-lg border border-[#E0E0E0] py-1.5 text-xs font-medium text-[#666666] hover:bg-[#F8F8F8]"
+                        >
+                          취소
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="overflow-y-auto rounded-lg border border-[#E0E0E0] bg-[#F8F8F8] px-3 py-2 text-xs text-[#333333] whitespace-pre-wrap" style={{ minHeight: 300 }}>
+                      {sessionContent || "(내용 없음)"}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
 

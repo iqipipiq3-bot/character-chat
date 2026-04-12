@@ -24,6 +24,8 @@ type Message = {
   content: string;
   created_at: string;
   model?: string | null;
+  reroll_group_id?: string | null;
+  reroll_index?: number | null;
 };
 
 function ModelHeartIcon({ model }: { model?: string | null }) {
@@ -222,6 +224,7 @@ export default function ChatPage() {
   // 페르소나
   const [personas, setPersonas] = useState<Persona[]>([]);
   const [activePersonaId, setActivePersonaId] = useState<string | null>(null);
+  const [sessionPersonaContent, setSessionPersonaContent] = useState<string>('');
 
   // 유저 노트
   const [userNote, setUserNote] = useState("");
@@ -388,7 +391,7 @@ export default function ChatPage() {
       setSelectedModel(modelToUse);
       if (!user) return;
       const [{ data: personaData }, { data: profileData }] = await Promise.all([
-        supabase.from("personas").select("id, name, content, is_default").eq("user_id", user.id).order("created_at", { ascending: true }),
+        supabase.from("personas").select("id, name, description, content, is_default").eq("user_id", user.id).order("created_at", { ascending: true }),
         supabase.from("profiles").select("nickname").eq("user_id", user.id).maybeSingle(),
       ]);
       setPersonas((personaData ?? []) as Persona[]);
@@ -422,6 +425,7 @@ export default function ChatPage() {
   const { updateCredits } = useHeaderStore();
 
   const [messages, setMessages] = useState<Message[]>([]);
+  const [activeRerollIndex, setActiveRerollIndex] = useState<Record<string, number>>({});
   const [hasMore, setHasMore] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const oldestCreatedAtRef = useRef<string | null>(null);
@@ -435,6 +439,7 @@ export default function ChatPage() {
   const [editError, setEditError] = useState<string | null>(null);
   const [savingEdit, setSavingEdit] = useState(false);
   const [contextMenu, setContextMenu] = useState<{ id: string; x: number; y: number } | null>(null);
+  const [pressingId, setPressingId] = useState<string | null>(null);
   const editTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const inputTextareaRef = useRef<HTMLTextAreaElement | null>(null);
@@ -442,6 +447,20 @@ export default function ChatPage() {
   const abortControllerRef = useRef<AbortController | null>(null);
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const [isUserScrolling, setIsUserScrolling] = useState(false);
+
+  // reroll 그룹별 최신 index 계산 유틸
+  function computeRerollIndices(msgs: Message[]): Record<string, number> {
+    const map: Record<string, number> = {};
+    for (const m of msgs) {
+      if (m.reroll_group_id && m.reroll_index != null) {
+        const gid = m.reroll_group_id;
+        if (map[gid] == null || m.reroll_index > map[gid]) {
+          map[gid] = m.reroll_index;
+        }
+      }
+    }
+    return map;
+  }
 
   // 컨텍스트 메뉴 닫기 (다른 곳 클릭 / 스크롤 / Escape)
   useEffect(() => {
@@ -463,7 +482,7 @@ export default function ChatPage() {
       const supabase = createSupabaseBrowserClient();
       const { data, error: fetchError } = await supabase
         .from("messages")
-        .select("id, role, content, created_at, model")
+        .select("id, role, content, created_at, model, reroll_group_id, reroll_index")
         .eq("conversation_id", conversationId)
         .order("created_at", { ascending: false })
         .limit(PAGE_SIZE);
@@ -480,6 +499,7 @@ export default function ChatPage() {
           if (fallbackError) { setError(fallbackError.message); return; }
           const fallbackMsgs = ((fallbackData ?? []) as Message[]).reverse();
           setMessages(fallbackMsgs);
+          setActiveRerollIndex(computeRerollIndices(fallbackMsgs));
           setHasMore(fallbackMsgs.length >= PAGE_SIZE);
           if (fallbackMsgs.length > 0) {
             oldestCreatedAtRef.current = fallbackMsgs[0].created_at;
@@ -499,6 +519,7 @@ export default function ChatPage() {
 
       const msgs = ((data ?? []) as Message[]).reverse();
       setMessages(msgs);
+      setActiveRerollIndex(computeRerollIndices(msgs));
       setHasMore(msgs.length >= PAGE_SIZE);
       if (msgs.length > 0) {
         oldestCreatedAtRef.current = msgs[0].created_at;
@@ -528,7 +549,7 @@ export default function ChatPage() {
       const supabase = createSupabaseBrowserClient();
       const { data } = await supabase
         .from("messages")
-        .select("id, role, content, created_at, model")
+        .select("id, role, content, created_at, model, reroll_group_id, reroll_index")
         .eq("conversation_id", conversationId)
         .lt("created_at", oldestCreatedAtRef.current)
         .order("created_at", { ascending: false })
@@ -544,6 +565,7 @@ export default function ChatPage() {
       if (data.length < PAGE_SIZE) setHasMore(false);
 
       setMessages((prev) => [...older, ...prev]);
+      setActiveRerollIndex((prev) => ({ ...prev, ...computeRerollIndices(older) }));
 
       requestAnimationFrame(() => {
         const newScrollHeight = document.documentElement.scrollHeight;
@@ -601,11 +623,18 @@ export default function ChatPage() {
   function beginEdit(m: Message) {
     setEditId(m.id);
     setEditText(m.content);
-    queueMicrotask(() => {
+    requestAnimationFrame(() => {
       const el = editTextareaRef.current;
       if (!el) return;
+      const scrollEl = document.documentElement;
+      const prevScrollTop = scrollEl.scrollTop;
+
       el.style.height = "0px";
       el.style.height = `${Math.max(200, el.scrollHeight)}px`;
+
+      requestAnimationFrame(() => {
+        scrollEl.scrollTop = prevScrollTop;
+      });
     });
   }
 
@@ -645,8 +674,15 @@ export default function ChatPage() {
   }
 
   function autosizeEditTextarea(el: HTMLTextAreaElement) {
+    const scrollEl = document.documentElement;
+    const prevScrollTop = scrollEl.scrollTop;
+
     el.style.height = "0px";
     el.style.height = `${Math.max(200, el.scrollHeight)}px`;
+
+    requestAnimationFrame(() => {
+      scrollEl.scrollTop = prevScrollTop;
+    });
   }
 
   async function handleStop() {
@@ -688,6 +724,34 @@ export default function ChatPage() {
       inputTextareaRef.current.style.height = "auto";
     }
 
+    // ── 리롤 그룹 정리: 선택되지 않은 응답 삭제 ──
+    {
+      const supabase = createSupabaseBrowserClient();
+      const groupsToClean = new Map<string, number>();
+      for (const m of messages) {
+        if (m.reroll_group_id && m.reroll_index != null) {
+          const active = activeRerollIndex[m.reroll_group_id];
+          if (active != null && m.reroll_index !== active) {
+            groupsToClean.set(m.reroll_group_id, active);
+          }
+        }
+      }
+      if (groupsToClean.size > 0) {
+        const deletePromises = Array.from(groupsToClean.entries()).map(([gid, activeIdx]) =>
+          supabase.from("messages").delete()
+            .eq("reroll_group_id", gid)
+            .neq("reroll_index", activeIdx)
+        );
+        await Promise.all(deletePromises);
+        // 로컬 state에서도 제거
+        setMessages((prev) => prev.filter((m) => {
+          if (!m.reroll_group_id || m.reroll_index == null) return true;
+          const active = groupsToClean.get(m.reroll_group_id);
+          return active == null || m.reroll_index === active;
+        }));
+      }
+    }
+
     // React가 렌더링할 시간을 주고 fetch 호출
     await new Promise<void>((resolve) => setTimeout(resolve, 0));
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -706,6 +770,7 @@ export default function ChatPage() {
           model: selectedModel,
           active_persona_id: activePersonaId ?? undefined,
           user_note: userNote.trim() || undefined,
+          persona_content: sessionPersonaContent || undefined,
         }),
       });
 
@@ -735,6 +800,8 @@ export default function ChatPage() {
             paidBalance?: number;
             userMessageId?: string;
             assistantMessageId?: string;
+            rerollGroupId?: string;
+            rerollIndex?: number;
           };
           if (data.error) {
             setError(data.error);
@@ -750,8 +817,22 @@ export default function ChatPage() {
             }
             if (data.assistantMessageId) {
               setMessages((prev) => prev.map((msg) =>
-                msg.id === assistantTempId ? { ...msg, id: data.assistantMessageId! } : msg
+                msg.id === assistantTempId
+                  ? {
+                      ...msg,
+                      id: data.assistantMessageId!,
+                      reroll_group_id: data.rerollGroupId,
+                      reroll_index: data.rerollIndex,
+                    }
+                  : msg
               ));
+            }
+            // reroll index 업데이트
+            if (data.rerollGroupId && data.rerollIndex != null) {
+              setActiveRerollIndex((prev) => ({
+                ...prev,
+                [data.rerollGroupId!]: data.rerollIndex!,
+              }));
             }
           }
           if (!data.text || data.thought) return;
@@ -818,6 +899,184 @@ export default function ChatPage() {
     }
   }
 
+  // reroll 그룹에서 activeRerollIndex에 해당하는 메시지만 표시
+  const visibleMessages = messages.filter((m) => {
+    if (!m.reroll_group_id || m.reroll_index == null) return true;
+    const activeIdx = activeRerollIndex[m.reroll_group_id];
+    return activeIdx == null || m.reroll_index === activeIdx;
+  });
+
+  // 마지막 AI 메시지 (리롤 UI 표시 대상)
+  const lastAssistantMsg = [...visibleMessages].reverse().find((m) => m.role === "assistant");
+
+  // 리롤: 같은 그룹의 전체 메시지 목록 (messages에서)
+  function getGroupMessages(groupId: string) {
+    return messages.filter((m) => m.reroll_group_id === groupId);
+  }
+
+  async function handleReroll() {
+    if (!lastAssistantMsg || loading || !characterId) return;
+    if (!lastAssistantMsg.reroll_group_id) return;
+    const groupId: string = lastAssistantMsg.reroll_group_id;
+    const currentIndex = lastAssistantMsg.reroll_index ?? 1;
+
+    const groupMsgs = getGroupMessages(groupId);
+    const maxIndex = Math.max(...groupMsgs.map((m) => m.reroll_index ?? 1));
+    if (maxIndex >= 5) return;
+
+    // 리롤 시 유저 메시지를 찾기: 이 AI 메시지 바로 직전의 user 메시지
+    const assistantIdx = messages.findIndex((m) => m.id === lastAssistantMsg.id);
+    let userMessage = "";
+    for (let i = assistantIdx - 1; i >= 0; i--) {
+      if (messages[i].role === "user") {
+        userMessage = messages[i].content;
+        break;
+      }
+    }
+    if (!userMessage) return;
+
+    setLoading(true);
+    setError(null);
+
+    const loadingTempId = `temp-loading-${Date.now()}`;
+    const assistantTempId = `temp-assistant-${Date.now()}`;
+    setMessages((prev) => [
+      ...prev,
+      { id: loadingTempId, role: "loading", content: "", created_at: new Date().toISOString() },
+    ]);
+    setIsUserScrolling(false);
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+
+    abortControllerRef.current = new AbortController();
+
+    try {
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        signal: abortControllerRef.current.signal,
+        body: JSON.stringify({
+          character_id: characterId,
+          conversation_id: conversationId,
+          message: userMessage,
+          model: selectedModel,
+          active_persona_id: activePersonaId ?? undefined,
+          user_note: userNote.trim() || undefined,
+          persona_content: sessionPersonaContent || undefined,
+          isReroll: true,
+          rerollGroupId: groupId,
+          rerollIndex: maxIndex,
+        }),
+      });
+
+      if (!res.ok || !res.body) {
+        const data = (await res.json()) as { error?: string };
+        setError(data.error ?? "리롤 중 오류가 발생했습니다.");
+        setMessages((prev) => prev.filter((m) => m.id !== loadingTempId));
+        return;
+      }
+
+      const reader = res.body.getReader();
+      streamingReaderRef.current = reader;
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let firstChunk = true;
+
+      function handleStreamPayloadReroll(jsonStr: string) {
+        if (!jsonStr) return;
+        try {
+          const data = JSON.parse(jsonStr) as {
+            text?: string;
+            thought?: boolean;
+            done?: boolean;
+            error?: string;
+            freeBalance?: number;
+            paidBalance?: number;
+            assistantMessageId?: string;
+            rerollGroupId?: string;
+            rerollIndex?: number;
+          };
+          if (data.error) setError(data.error);
+          if (data.done && typeof data.freeBalance === "number" && typeof data.paidBalance === "number") {
+            updateCredits(data.freeBalance, data.paidBalance);
+          }
+          if (data.done) {
+            if (data.assistantMessageId) {
+              setMessages((prev) => prev.map((msg) =>
+                msg.id === assistantTempId
+                  ? {
+                      ...msg,
+                      id: data.assistantMessageId!,
+                      reroll_group_id: data.rerollGroupId,
+                      reroll_index: data.rerollIndex,
+                    }
+                  : msg
+              ));
+            }
+            if (data.rerollGroupId && data.rerollIndex != null) {
+              setActiveRerollIndex((prev) => ({
+                ...prev,
+                [data.rerollGroupId!]: data.rerollIndex!,
+              }));
+            }
+          }
+          if (!data.text || data.thought) return;
+
+          if (firstChunk) {
+            firstChunk = false;
+            setMessages((prev) => prev.map((m) =>
+              m.id === loadingTempId
+                ? {
+                    id: assistantTempId,
+                    role: "assistant" as const,
+                    content: "",
+                    created_at: new Date().toISOString(),
+                    model: selectedModel,
+                    reroll_group_id: groupId,
+                    reroll_index: maxIndex + 1,
+                  }
+                : m
+            ));
+            // 새 리롤 메시지를 활성 index로 설정
+            setActiveRerollIndex((prev) => ({ ...prev, [groupId]: maxIndex + 1 }));
+          }
+
+          setMessages((prev) => prev.map((m) =>
+            m.id === assistantTempId ? { ...m, content: m.content + data.text } : m
+          ));
+        } catch { /* ignore */ }
+      }
+
+      function handleSseEventReroll(eventChunk: string) {
+        for (const line of eventChunk.split("\n")) {
+          if (!line.startsWith("data: ")) continue;
+          handleStreamPayloadReroll(line.slice(6).trim());
+        }
+      }
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const events = buffer.split("\n\n");
+        buffer = events.pop() ?? "";
+        for (const eventChunk of events) handleSseEventReroll(eventChunk);
+      }
+      buffer += decoder.decode();
+      const remainingEvents = buffer.split("\n\n").filter((chunk) => chunk.trim());
+      for (const eventChunk of remainingEvents) handleSseEventReroll(eventChunk);
+
+    } catch (err) {
+      if (err instanceof Error && err.name === "AbortError") return;
+      setError(err instanceof Error ? err.message : "네트워크 오류가 발생했습니다.");
+    } finally {
+      abortControllerRef.current = null;
+      streamingReaderRef.current = null;
+      setMessages((prev) => prev.filter((m) => m.role !== "loading"));
+      setLoading(false);
+    }
+  }
+
   return (
     <div className="min-h-screen text-[#1A1A1A]" style={{ backgroundColor: fontSettings.chatBg || "#F8F8F8" }}>
       {/* 우클릭 컨텍스트 메뉴 */}
@@ -827,6 +1086,17 @@ export default function ChatPage() {
           onClick={(e) => e.stopPropagation()}
           className="overflow-hidden rounded-lg border border-[#E0E0E0] bg-white shadow-lg dark:border-zinc-700 dark:bg-zinc-800"
         >
+          <button
+            type="button"
+            onClick={() => {
+              const msg = messages.find((m) => m.id === contextMenu.id);
+              if (msg) void navigator.clipboard.writeText(msg.content);
+              setContextMenu(null);
+            }}
+            className="w-full px-4 py-2.5 text-left text-xs text-[#333333] hover:bg-[#F8F8F8] dark:text-zinc-200 dark:hover:bg-zinc-700"
+          >
+            복사
+          </button>
           <button
             type="button"
             onClick={() => {
@@ -971,12 +1241,12 @@ export default function ChatPage() {
               대화의 시작입니다
             </p>
           )}
-          {messages.length === 0 ? (
+          {visibleMessages.length === 0 ? (
             <p className="text-sm text-[#666666]">
               아직 메시지가 없습니다. 아래 입력창에 첫 메시지를 보내 보세요.
             </p>
           ) : (
-            messages.map((m) => (
+            visibleMessages.map((m) => (
               <div key={m.id} className="flex">
                 {/* wrapper: relative로 ... 버튼 기준점 */}
                 <div
@@ -1016,9 +1286,11 @@ export default function ChatPage() {
 
                   {/* 말풍선 */}
                   <div
-                    className={`rounded-2xl ${
+                    className={`relative select-none rounded-2xl transition-transform duration-150 ${
                       m.role === "loading" ? "w-fit" : "min-w-0 overflow-hidden px-3 py-2"
-                    } ${m.role === "user" ? "rounded-br-none" : "rounded-bl-none"}`}
+                    } ${m.role === "user" ? "rounded-br-none" : "rounded-bl-none"} ${
+                      m.role === "assistant" && lastAssistantMsg?.id === m.id && !m.id.startsWith("temp-") && m.reroll_group_id ? "pb-10" : ""
+                    } ${pressingId === m.id ? "scale-[0.97] opacity-80" : ""}`}
                     style={{
                       backgroundColor:
                         m.role === "user" ? fontSettings.userBubbleBg : fontSettings.aiBubbleBg,
@@ -1026,8 +1298,8 @@ export default function ChatPage() {
                       fontSize: fontSettings.fontSize,
                     }}
                     onContextMenu={(e) => {
-                      if (m.role === "loading" || editId === m.id) return;
                       e.preventDefault();
+                      if (m.role === "loading" || editId === m.id) return;
                       setContextMenu({ id: m.id, x: e.clientX, y: e.clientY });
                     }}
                     onTouchStart={(e) => {
@@ -1035,7 +1307,9 @@ export default function ChatPage() {
                       const touch = e.touches[0];
                       const x = touch.clientX;
                       const y = touch.clientY;
+                      setPressingId(m.id);
                       longPressTimerRef.current = setTimeout(() => {
+                        setPressingId(null);
                         setContextMenu({ id: m.id, x, y });
                       }, 500);
                     }}
@@ -1044,12 +1318,14 @@ export default function ChatPage() {
                         clearTimeout(longPressTimerRef.current);
                         longPressTimerRef.current = null;
                       }
+                      setPressingId(null);
                     }}
                     onTouchMove={() => {
                       if (longPressTimerRef.current) {
                         clearTimeout(longPressTimerRef.current);
                         longPressTimerRef.current = null;
                       }
+                      setPressingId(null);
                     }}
                   >
                     {m.role === "loading" ? (
@@ -1112,6 +1388,66 @@ export default function ChatPage() {
                         />
                       </div>
                     )}
+
+                    {/* ── 리롤 UI (말풍선 안쪽 우측 하단) ── */}
+                    {m.role === "assistant" && lastAssistantMsg?.id === m.id && !m.id.startsWith("temp-") && (() => {
+                      const groupId = m.reroll_group_id;
+                      if (!groupId) return null;
+                      const groupMsgs = getGroupMessages(groupId).sort((a, b) => (a.reroll_index ?? 1) - (b.reroll_index ?? 1));
+                      const totalCount = groupMsgs.length;
+                      const currentIdx = activeRerollIndex[groupId] ?? m.reroll_index ?? 1;
+                      const maxIdx = Math.max(...groupMsgs.map((gm) => gm.reroll_index ?? 1));
+                      const minIdx = Math.min(...groupMsgs.map((gm) => gm.reroll_index ?? 1));
+                      const hasTemp = messages.some((msg) => msg.id.startsWith("temp-"));
+
+                      return (
+                        <div className="absolute bottom-2 right-2 flex items-center gap-1.5">
+                          {totalCount >= 2 && (
+                            <>
+                              <button
+                                type="button"
+                                disabled={currentIdx <= minIdx || hasTemp}
+                                onClick={() => {
+                                  const prevMsgs = groupMsgs.filter((gm) => (gm.reroll_index ?? 1) < currentIdx);
+                                  if (prevMsgs.length > 0) {
+                                    const prev = prevMsgs[prevMsgs.length - 1];
+                                    setActiveRerollIndex((p) => ({ ...p, [groupId]: prev.reroll_index ?? 1 }));
+                                  }
+                                }}
+                                className="flex h-6 w-6 items-center justify-center rounded p-1 text-[#999999] hover:text-[#666666] disabled:opacity-30"
+                              >
+                                <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M6.5 1.5L3.5 5L6.5 8.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                              </button>
+                              <span className="text-xs tabular-nums text-[#AAAAAA]">
+                                {groupMsgs.findIndex((gm) => (gm.reroll_index ?? 1) === currentIdx) + 1}/{totalCount}
+                              </span>
+                              <button
+                                type="button"
+                                disabled={currentIdx >= maxIdx || hasTemp}
+                                onClick={() => {
+                                  const nextMsgs = groupMsgs.filter((gm) => (gm.reroll_index ?? 1) > currentIdx);
+                                  if (nextMsgs.length > 0) {
+                                    const next = nextMsgs[0];
+                                    setActiveRerollIndex((p) => ({ ...p, [groupId]: next.reroll_index ?? 1 }));
+                                  }
+                                }}
+                                className="flex h-6 w-6 items-center justify-center rounded p-1 text-[#999999] hover:text-[#666666] disabled:opacity-30"
+                              >
+                                <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M3.5 1.5L6.5 5L3.5 8.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                              </button>
+                            </>
+                          )}
+                          <button
+                            type="button"
+                            disabled={maxIdx >= 5 || loading || hasTemp}
+                            onClick={() => void handleReroll()}
+                            className="flex h-6 w-6 cursor-pointer items-center justify-center rounded p-1 text-[#999999] hover:text-[#666666] disabled:opacity-30"
+                          >
+                            <svg width="16" height="16" viewBox="0 0 14 14" fill="none"><path d="M2 7a5 5 0 0 1 9.17-2.78M12 7a5 5 0 0 1-9.17 2.78" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/><path d="M10.5 1.5V4.5H7.5M3.5 12.5V9.5H6.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                          </button>
+                        </div>
+                      );
+                    })()}
                   </div>
 
                 </div>
@@ -1215,6 +1551,7 @@ export default function ChatPage() {
         fontSettings={fontSettings}
         onFontSettingsChange={handleFontSettingsChange}
         onEditPersonasClick={() => router.push("/personas")}
+        onSessionContentChange={setSessionPersonaContent}
       />
 
       {/* 기억 패널 */}

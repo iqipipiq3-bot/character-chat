@@ -13,6 +13,7 @@ function getSupabaseEnv() {
 type Persona = {
   id: string;
   name: string;
+  description: string;
   content: string;
   is_default: boolean;
   created_at: string;
@@ -47,7 +48,7 @@ export default async function PersonasPage() {
 
   const { data: personas } = await supabase
     .from("personas")
-    .select("id, name, content, is_default, created_at")
+    .select("id, name, description, content, is_default, created_at")
     .eq("user_id", user.id)
     .order("created_at", { ascending: true });
 
