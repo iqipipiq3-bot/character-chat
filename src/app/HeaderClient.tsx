@@ -25,6 +25,20 @@ export function HeaderClient({ displayName, isLoggedIn, avatarUrl, userId, follo
   const { checkedInToday: localCheckedIn, freeBalance: localFreeBalance, paidBalance: localPaidBalance } = useHeaderStore();
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
   const mobileSearchRef = useRef<HTMLInputElement>(null);
+  const [unreadCount, setUnreadCount] = useState(0);
+
+  useEffect(() => {
+    if (!isLoggedIn) return;
+    (async () => {
+      try {
+        const res = await fetch("/api/notifications");
+        if (res.ok) {
+          const json = await res.json() as { unread_count?: number };
+          setUnreadCount(json.unread_count ?? 0);
+        }
+      } catch { /* ignore */ }
+    })();
+  }, [isLoggedIn, pathname]);
 
   useEffect(() => {
     if (mobileSearchOpen) {
@@ -153,7 +167,7 @@ export function HeaderClient({ displayName, isLoggedIn, avatarUrl, userId, follo
       )}
 
       {/* 모바일 오른쪽 아이콘 영역 */}
-      <div className="ml-auto flex items-center gap-1 md:hidden">
+      <div className="ml-auto flex items-center gap-0.5 md:hidden">
         {/* 검색 아이콘 버튼 */}
         <button
           type="button"
@@ -182,6 +196,22 @@ export function HeaderClient({ displayName, isLoggedIn, avatarUrl, userId, follo
             )}
           </Link>
         )}
+
+        {/* 알림(공지) 아이콘 (모바일) */}
+        <Link
+          href="/notifications"
+          className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-900"
+          aria-label="알림"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="h-5 w-5">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M14.857 17.082a23.848 23.848 0 0 0 5.454-1.31A8.967 8.967 0 0 1 18 9.75V9A6 6 0 0 0 6 9v.75a8.967 8.967 0 0 1-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 0 1-5.714 0m5.714 0a3 3 0 1 1-5.714 0" />
+          </svg>
+          {isLoggedIn && unreadCount > 0 && (
+            <span className="absolute right-0.5 top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-bold text-white">
+              {unreadCount > 99 ? "99+" : unreadCount}
+            </span>
+          )}
+        </Link>
 
         {/* 유저 아이콘 (모바일) → 마이페이지 이동 */}
         {isLoggedIn ? (
@@ -225,9 +255,9 @@ export function HeaderClient({ displayName, isLoggedIn, avatarUrl, userId, follo
       )}
 
       {/* 알림 버튼 (데스크탑) */}
-      <button
-        type="button"
-        className="hidden md:flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-900"
+      <Link
+        href="/notifications"
+        className="relative hidden md:flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-900"
         aria-label="알림"
       >
         <svg
@@ -244,7 +274,12 @@ export function HeaderClient({ displayName, isLoggedIn, avatarUrl, userId, follo
             d="M14.857 17.082a23.848 23.848 0 0 0 5.454-1.31A8.967 8.967 0 0 1 18 9.75V9A6 6 0 0 0 6 9v.75a8.967 8.967 0 0 1-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 0 1-5.714 0m5.714 0a3 3 0 1 1-5.714 0"
           />
         </svg>
-      </button>
+        {isLoggedIn && unreadCount > 0 && (
+          <span className="absolute right-0 top-0 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-bold text-white">
+            {unreadCount > 99 ? "99+" : unreadCount}
+          </span>
+        )}
+      </Link>
 
       {/* 유저 버튼 (데스크탑) */}
       {isLoggedIn ? (

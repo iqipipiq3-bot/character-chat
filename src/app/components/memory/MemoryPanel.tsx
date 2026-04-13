@@ -446,6 +446,7 @@ export function MemoryPanel({ conversationId, characterId, characterName, isOpen
   const [relationshipItems, setRelationshipItems] = useState<RelationshipItem[]>([]);
   const [relationshipSaving, setRelationshipSaving] = useState(false);
   const [relationshipMemoryId, setRelationshipMemoryId] = useState<string | null>(null);
+  const [relationshipToast, setRelationshipToast] = useState<string | null>(null);
 
   const dndSensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -488,13 +489,20 @@ export function MemoryPanel({ conversationId, characterId, characterName, isOpen
     });
   }, [memories]);
 
-  // relationship 메모리 → items 동기화
+  // relationship 메모리 → items 동기화 (파싱 실패/빈 값이면 빈 배열로 초기화)
   useEffect(() => {
     const rel = memories
       .filter((m) => m.memory_type === "relationship")
       .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0];
     if (rel) {
-      setRelationshipItems(parseRelationshipJson(rel.content));
+      let parsed: RelationshipItem[] = [];
+      try {
+        parsed = parseRelationshipJson(rel.content);
+        if (!Array.isArray(parsed)) parsed = [];
+      } catch {
+        parsed = [];
+      }
+      setRelationshipItems(parsed);
       setRelationshipMemoryId(rel.id);
     } else {
       setRelationshipItems([]);
@@ -502,8 +510,9 @@ export function MemoryPanel({ conversationId, characterId, characterName, isOpen
     }
   }, [memories]);
 
-  const saveRelationshipItems = useCallback(async (items: RelationshipItem[]) => {
+  const saveRelationshipItems = useCallback(async (items: RelationshipItem[], opts?: { toast?: boolean }) => {
     setRelationshipSaving(true);
+    let ok = false;
     try {
       const nonEmpty = items.filter((it) => it.character_name.trim() || it.emotion.trim() || it.relationship.trim());
       const content = JSON.stringify(nonEmpty);
@@ -516,6 +525,9 @@ export function MemoryPanel({ conversationId, characterId, characterName, isOpen
         });
         setMemories((prev) => prev.filter((m) => m.id !== relationshipMemoryId));
         setRelationshipMemoryId(null);
+        ok = true;
+      } else if (nonEmpty.length === 0) {
+        ok = true;
       } else if (nonEmpty.length > 0 && relationshipMemoryId) {
         await fetch(`/api/memories/${conversationId}`, {
           method: "PATCH",
@@ -523,6 +535,7 @@ export function MemoryPanel({ conversationId, characterId, characterName, isOpen
           body: JSON.stringify({ memory_id: relationshipMemoryId, content }),
         });
         setMemories((prev) => prev.map((m) => m.id === relationshipMemoryId ? { ...m, content } : m));
+        ok = true;
       } else if (nonEmpty.length > 0) {
         const res = await fetch(`/api/memories/${conversationId}`, {
           method: "POST",
@@ -533,12 +546,17 @@ export function MemoryPanel({ conversationId, characterId, characterName, isOpen
           const json = (await res.json()) as { memory: Memory };
           setMemories((prev) => [...prev, json.memory]);
           setRelationshipMemoryId(json.memory.id);
+          ok = true;
         }
       }
     } catch {
       // 실패 시 조용히 무시
     } finally {
       setRelationshipSaving(false);
+      if (ok && opts?.toast) {
+        setRelationshipToast("저장됨");
+        setTimeout(() => setRelationshipToast(null), 1500);
+      }
     }
   }, [conversationId, characterId, relationshipMemoryId, setMemories]);
 
@@ -879,8 +897,21 @@ export function MemoryPanel({ conversationId, characterId, characterName, isOpen
                       <PlusIcon />
                       <span>캐릭터 추가</span>
                     </button>
+                    <button
+                      type="button"
+                      onClick={() => void saveRelationshipItems(relationshipItems, { toast: true })}
+                      disabled={relationshipSaving}
+                      className="rounded-lg border border-[#1A1A2E] bg-[#1A1A2E] px-2 py-0.5 text-[11px] text-white hover:bg-[#2A2A3E] disabled:opacity-50"
+                    >
+                      전체 저장
+                    </button>
                   </div>
                 </div>
+                {relationshipToast && (
+                  <div className="mt-2 rounded-lg bg-[#1A1A1A] px-3 py-1.5 text-center text-[11px] text-white">
+                    {relationshipToast}
+                  </div>
+                )}
 
                 {relationshipItems.length === 0 ? (
                   <p className="mt-2 text-[11px] text-[#CCCCCC]">아직 관계 정보가 없습니다.</p>
@@ -899,22 +930,27 @@ export function MemoryPanel({ conversationId, characterId, characterName, isOpen
                           <div className="flex items-center gap-2">
                             <span className={labelCls}>캐릭터 이름</span>
                             <input type="text" value={item.character_name} onChange={(e) => updateField("character_name", e.target.value)}
-                              onBlur={() => void saveRelationshipItems(relationshipItems)}
                               placeholder="예) 철수" maxLength={50} className={fieldCls} />
                           </div>
                           <div className="flex items-center gap-2">
                             <span className={labelCls}>유저를 향한 감정</span>
                             <input type="text" value={item.emotion} onChange={(e) => updateField("emotion", e.target.value)}
-                              onBlur={() => void saveRelationshipItems(relationshipItems)}
                               placeholder="예) 집착하는 사랑" maxLength={50} className={fieldCls} />
                           </div>
                           <div className="flex items-center gap-2">
                             <span className={labelCls}>캐릭터와 유저의 사이</span>
                             <input type="text" value={item.relationship} onChange={(e) => updateField("relationship", e.target.value)}
-                              onBlur={() => void saveRelationshipItems(relationshipItems)}
                               placeholder="예) 연인" maxLength={50} className={fieldCls} />
                           </div>
-                          <div className="flex justify-end">
+                          <div className="flex justify-end gap-2">
+                            <button
+                              type="button"
+                              onClick={() => void saveRelationshipItems(relationshipItems, { toast: true })}
+                              disabled={relationshipSaving}
+                              className="rounded-lg border border-[#1A1A2E] px-2 py-0.5 text-[11px] text-[#1A1A2E] hover:bg-[#F0F0F5] disabled:opacity-50"
+                            >
+                              저장
+                            </button>
                             <button
                               type="button"
                               onClick={() => {

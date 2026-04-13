@@ -700,9 +700,21 @@ export function CharacterFormClient({ mode, characterId, initialData }: Props) {
 
         {/* Header */}
         <div className="flex items-center justify-between">
-          <h1 className="text-xl font-semibold tracking-tight">
-            {mode === "create" ? "캐릭터 만들기" : "캐릭터 수정"}
-          </h1>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => router.back()}
+              className="md:hidden flex h-8 w-8 items-center justify-center rounded-lg text-zinc-700 hover:bg-zinc-100 dark:text-zinc-200 dark:hover:bg-zinc-800"
+              aria-label="뒤로가기"
+            >
+              <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" />
+              </svg>
+            </button>
+            <h1 className="text-xl font-semibold tracking-tight">
+              {mode === "create" ? "캐릭터 만들기" : "캐릭터 수정"}
+            </h1>
+          </div>
           <button
             type="button"
             onClick={() => void handleSave()}
@@ -916,7 +928,7 @@ export function CharacterFormClient({ mode, characterId, initialData }: Props) {
             </div>
 
             {/* 오른쪽: 템플릿 패널 */}
-            <div className="hidden md:block">
+            <div>
               <div className="sticky top-6 space-y-3">
                 <p className="text-xs font-medium text-zinc-400 dark:text-zinc-500">내 템플릿</p>
 

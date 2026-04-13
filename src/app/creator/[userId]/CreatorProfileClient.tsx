@@ -137,6 +137,23 @@ export function CreatorProfileClient({
         if (error) throw error;
         setIsFollowing(true);
         setFollowerCount((n) => n + 1);
+
+        // 팔로우 알림
+        try {
+          const { data: me } = await supabase
+            .from("profiles")
+            .select("nickname")
+            .eq("user_id", currentUserId)
+            .maybeSingle();
+          const nickname = (me?.nickname as string | null) ?? "누군가";
+          await supabase.from("notifications").insert({
+            user_id: profile.user_id,
+            type: "follow",
+            message: `${nickname}님이 팔로우했습니다`,
+            link: `/creator/${currentUserId}`,
+            is_read: false,
+          });
+        } catch { /* 알림 실패는 무시 */ }
       }
     } catch (err) {
       window.alert(err instanceof Error ? err.message : "오류가 발생했습니다.");

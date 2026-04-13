@@ -442,6 +442,8 @@ export default function ChatPage() {
   const [pressingId, setPressingId] = useState<string | null>(null);
   const editTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const menuTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const touchStartPosRef = useRef<{ x: number; y: number } | null>(null);
   const inputTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const streamingReaderRef = useRef<ReadableStreamDefaultReader<Uint8Array> | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -1307,25 +1309,42 @@ export default function ChatPage() {
                       const touch = e.touches[0];
                       const x = touch.clientX;
                       const y = touch.clientY;
-                      setPressingId(m.id);
+                      touchStartPosRef.current = { x, y };
                       longPressTimerRef.current = setTimeout(() => {
-                        setPressingId(null);
-                        setContextMenu({ id: m.id, x, y });
-                      }, 500);
+                        setPressingId(m.id);
+                        menuTimerRef.current = setTimeout(() => {
+                          setPressingId(null);
+                          setContextMenu({ id: m.id, x, y });
+                        }, 1000);
+                      }, 1000);
                     }}
                     onTouchEnd={() => {
                       if (longPressTimerRef.current) {
                         clearTimeout(longPressTimerRef.current);
                         longPressTimerRef.current = null;
                       }
-                      setPressingId(null);
-                    }}
-                    onTouchMove={() => {
-                      if (longPressTimerRef.current) {
-                        clearTimeout(longPressTimerRef.current);
-                        longPressTimerRef.current = null;
+                      if (menuTimerRef.current) {
+                        clearTimeout(menuTimerRef.current);
+                        menuTimerRef.current = null;
                       }
                       setPressingId(null);
+                      touchStartPosRef.current = null;
+                    }}
+                    onTouchMove={(e) => {
+                      if (!touchStartPosRef.current) return;
+                      const dx = Math.abs(e.touches[0].clientX - touchStartPosRef.current.x);
+                      const dy = Math.abs(e.touches[0].clientY - touchStartPosRef.current.y);
+                      if (dx > 10 || dy > 10) {
+                        if (longPressTimerRef.current) {
+                          clearTimeout(longPressTimerRef.current);
+                          longPressTimerRef.current = null;
+                        }
+                        if (menuTimerRef.current) {
+                          clearTimeout(menuTimerRef.current);
+                          menuTimerRef.current = null;
+                        }
+                        setPressingId(null);
+                      }
                     }}
                   >
                     {m.role === "loading" ? (

@@ -167,6 +167,40 @@ export function CharacterDetailClient({
       };
       setComments((prev) => [...prev, newEntry]);
       setNewComment("");
+
+      // 댓글 알림 (캐릭터 제작자에게) — 본인 캐릭터엔 알림 안 감
+      try {
+        const ownerId = (character as unknown as { user_id?: string }).user_id;
+        const preview = newEntry.content.slice(0, 20);
+        if (ownerId && ownerId !== user.id) {
+          await supabase.from("notifications").insert({
+            user_id: ownerId,
+            type: "comment",
+            message: `${newEntry.author_nickname}님이 댓글을 달았습니다: ${preview}`,
+            link: `/explore/${character.id}`,
+            is_read: false,
+          });
+        }
+        // 대댓글 (parent_comment_id 존재 시)
+        const parentId = (data as unknown as { parent_comment_id?: string }).parent_comment_id;
+        if (parentId) {
+          const { data: parent } = await supabase
+            .from("comments")
+            .select("user_id")
+            .eq("id", parentId)
+            .maybeSingle();
+          const parentUserId = parent?.user_id as string | undefined;
+          if (parentUserId && parentUserId !== user.id) {
+            await supabase.from("notifications").insert({
+              user_id: parentUserId,
+              type: "reply",
+              message: `${newEntry.author_nickname}님이 답글을 달았습니다`,
+              link: `/explore/${character.id}`,
+              is_read: false,
+            });
+          }
+        }
+      } catch { /* 알림 실패는 무시 */ }
     } catch (err) {
       window.alert(err instanceof Error ? err.message : "댓글 작성 중 오류가 발생했습니다.");
     } finally {
