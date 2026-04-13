@@ -76,6 +76,7 @@ type PostBody = {
   isReroll?: boolean;
   rerollGroupId?: string;
   rerollIndex?: number;
+  rerollMessageId?: string;
 };
 
 type ModelConfig = {
@@ -116,6 +117,7 @@ type ConversationRow = {
 };
 
 type HistoryRow = {
+  id: string;
   role: "user" | "assistant";
   content: string;
   created_at: string;
@@ -405,7 +407,7 @@ export async function POST(request: NextRequest) {
         .maybeSingle<ConversationRow>(),
       supabase
         .from("messages")
-        .select("role, content, created_at")
+        .select("id, role, content, created_at")
         .eq("conversation_id", conversationId)
         .order("created_at", { ascending: false })
         .limit(10),
@@ -494,7 +496,12 @@ export async function POST(request: NextRequest) {
     }
 
     // DB에서 desc로 가져왔으므로 reverse로 asc 변환 (sort보다 O(n))
-    const sortedHistory = ((history ?? []) as HistoryRow[]).reverse();
+    let sortedHistory = ((history ?? []) as HistoryRow[]).reverse();
+
+    // 리롤 요청 시 리롤 대상 AI 메시지를 히스토리에서 제외
+    if (body.isReroll && body.rerollMessageId) {
+      sortedHistory = sortedHistory.filter((entry) => entry.id !== body.rerollMessageId);
+    }
 
     const isFirstTurn = !sortedHistory.some((entry) => entry.role === "user");
     const allText = [message, ...sortedHistory.map((entry) => entry.content)]

@@ -968,6 +968,7 @@ export default function ChatPage() {
           isReroll: true,
           rerollGroupId: groupId,
           rerollIndex: maxIndex,
+          rerollMessageId: lastAssistantMsg.id,
         }),
       });
 
