@@ -29,7 +29,9 @@ character-chat/
 ├── package-lock.json
 ├── postcss.config.mjs         # PostCSS 설정 (Tailwind 연동)
 ├── tsconfig.json              # TypeScript 설정
+├── PROJECT_STRUCTURE.md        # 프로젝트 파일 구조 문서 (본 파일)
 ├── README.md
+├── tsconfig.tsbuildinfo        # TypeScript 빌드 정보 (자동 생성)
 ├── public/                    # 정적 파일 (SVG 아이콘 등)
 └── src/                       # 소스 코드
 ```
@@ -40,7 +42,7 @@ character-chat/
 
 ```
 src/
-├── proxy.ts                   # Supabase 인증 미들웨어 (쿠키 기반 세션 관리)
+├── middleware.ts               # Supabase 인증 미들웨어 (쿠키 기반 세션 관리)
 └── app/                       # Next.js App Router 루트
 ```
 
@@ -94,6 +96,12 @@ src/app/api/
 │   │   └── route.ts           # 메모리 추출 API (대화에서 기억 추출)
 │   └── [conversationId]/
 │       └── route.ts           # 대화별 메모리 관리 API
+├── notices/
+│   ├── route.ts               # 공지사항 목록/생성 API
+│   └── [id]/
+│       └── route.ts           # 공지사항 개별 CRUD API
+├── notifications/
+│   └── route.ts               # 알림 관리 API
 └── signup-bonus/
     └── route.ts               # 회원가입 보너스 크레딧 API
 ```
@@ -153,6 +161,9 @@ src/app/
 │       ├── page.tsx
 │       └── FollowingClient.tsx
 │
+├── notifications/                   # 알림/공지사항
+│   └── page.tsx                     # 알림 페이지
+│
 ├── personas/                        # 페르소나 관리
 │   ├── page.tsx
 │   └── PersonasClient.tsx
@@ -200,6 +211,6 @@ src/app/context/
 2. **App Router**: Next.js App Router 사용, `(auth)` 같은 라우트 그룹 활용
 3. **동적 라우팅**: `[conversationId]`, `[characterId]`, `[userId]`, `[id]` 등 동적 세그먼트 사용
 4. **API Routes**: `src/app/api/` 하위에 REST API 엔드포인트 구성
-5. **인증**: Supabase SSR을 통한 쿠키 기반 인증 (`proxy.ts`가 미들웨어 역할)
+5. **인증**: Supabase SSR을 통한 쿠키 기반 인증 (`middleware.ts`가 미들웨어 역할)
 6. **AI 채팅**: Google Gemini API를 통한 AI 캐릭터 대화 기능
 7. **메모리 시스템**: 대화에서 기억을 추출하고 프롬프트에 반영하는 구조

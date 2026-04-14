@@ -52,11 +52,13 @@ type Props = {
   activePersonaId: string | null;
   onSelectPersona: (id: string | null) => void;
   userNote: string;
-  onUserNoteChange: (note: string) => void;
+  onUserNoteChange: (note: string) => void | Promise<void>;
   fontSettings: FontSettings;
   onFontSettingsChange: (s: FontSettings) => void;
   onEditPersonasClick: () => void;
   onSessionContentChange: (content: string) => void;
+  savedSessionContent?: string;
+  onSessionContentSave?: (content: string) => void;
 };
 
 export function ChatSidePanel({
@@ -71,10 +73,13 @@ export function ChatSidePanel({
   onFontSettingsChange,
   onEditPersonasClick,
   onSessionContentChange,
+  savedSessionContent,
+  onSessionContentSave,
 }: Props) {
   const [tab, setTab] = useState<"persona" | "note" | "font">("persona");
   const [draftNote, setDraftNote] = useState(userNote);
-  const [noteSaved, setNoteSaved] = useState(false);
+  const [savedNote, setSavedNote] = useState(userNote);
+  const [noteSaving, setNoteSaving] = useState(false);
 
   const [sessionContent, setSessionContent] = useState<string>('');
   const [isEditing, setIsEditing] = useState(false);
@@ -84,9 +89,10 @@ export function ChatSidePanel({
   const [tooltipOpen, setTooltipOpen] = useState(false);
   const tooltipRef = useRef<HTMLDivElement>(null);
 
-  // 외부에서 userNote가 바뀌면(초기 로드) draft도 동기화
+  // 외부에서 userNote가 바뀌면(초기 로드) draft/saved 둘 다 동기화
   useEffect(() => {
     setDraftNote(userNote);
+    setSavedNote(userNote);
   }, [userNote]);
 
   // 드롭다운 외부 클릭 닫기
@@ -105,12 +111,15 @@ export function ChatSidePanel({
 
   // 페르소나 변경 시 sessionContent / originalContent 동기화
   useEffect(() => {
+    if (!personas || personas.length === 0) return; // 로딩 완료 전엔 스킵
     if (activePersonaId) {
       const p = personas.find((p) => p.id === activePersonaId);
-      const content = p?.content ?? '';
-      setSessionContent(content);
-      setOriginalContent(content);
-      onSessionContentChange(content);
+      const personaContent = p?.content ?? '';
+      setOriginalContent(personaContent);
+      // DB에 저장된 세션 오버라이드가 있으면 그것을 사용, 없으면 원본
+      const initial = savedSessionContent && savedSessionContent.length > 0 ? savedSessionContent : personaContent;
+      setSessionContent(initial);
+      onSessionContentChange(initial);
     } else {
       setSessionContent('');
       setOriginalContent('');
@@ -120,10 +129,15 @@ export function ChatSidePanel({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activePersonaId, personas]);
 
-  function handleNoteSave() {
-    onUserNoteChange(draftNote);
-    setNoteSaved(true);
-    setTimeout(() => setNoteSaved(false), 2000);
+  async function saveUserNote() {
+    if (draftNote === savedNote || noteSaving) return;
+    setNoteSaving(true);
+    try {
+      await onUserNoteChange(draftNote);
+      setSavedNote(draftNote);
+    } finally {
+      setNoteSaving(false);
+    }
   }
 
   const activePersona =
@@ -274,14 +288,9 @@ export function ChatSidePanel({
                           </div>
                         )}
                       </div>
-                      {sessionContent !== originalContent && (
-                        <span className="rounded-full bg-orange-100 px-2 py-0.5 text-[10px] font-medium text-orange-600">
-                          세션 수정 중
-                        </span>
-                      )}
                     </div>
                     <div className="flex items-center gap-1.5">
-                      {!isEditing && sessionContent !== originalContent && (
+                      {!isEditing && sessionContent.trim() !== originalContent.trim() && (
                         <button
                           type="button"
                           onClick={() => {
@@ -318,6 +327,7 @@ export function ChatSidePanel({
                           type="button"
                           onClick={() => {
                             onSessionContentChange(sessionContent);
+                            onSessionContentSave?.(sessionContent);
                             setIsEditing(false);
                           }}
                           className="flex-1 rounded-lg bg-[#1A1A2E] py-1.5 text-xs font-medium text-white hover:bg-[#141424]"
@@ -348,36 +358,48 @@ export function ChatSidePanel({
           )}
 
           {/* ── 유저 노트 탭 ── */}
-          {tab === "note" && (
-            <div className="space-y-3">
-              <p className="text-xs text-[#666666]">
-                AI가 대화 시 참고할 메모를 입력하세요.
-                <br />
-                다음 메시지부터 시스템 프롬프트에 반영됩니다.
-              </p>
-              <div className="relative">
-                <textarea
-                  value={draftNote}
-                  onChange={(e) => setDraftNote(e.target.value)}
-                  maxLength={1000}
-                  rows={9}
-                  placeholder={"예: 오늘 유저는 기분이 안 좋음\n피곤하고 우울한 상태..."}
-                  className="w-full resize-none rounded-lg border border-[#E0E0E0] bg-white px-3 py-2 pb-6 text-sm outline-none focus:border-[#666666]"
-                />
-                <span className="pointer-events-none absolute bottom-2 right-2 text-[11px] text-[#999999]">
-                  {draftNote.length}/1000
-                </span>
+          {tab === "note" && (() => {
+            const isClean = draftNote === savedNote;
+            const buttonLabel = noteSaving ? "저장 중..." : isClean ? "저장됨" : "저장";
+            const buttonDisabled = noteSaving || isClean;
+            return (
+              <div className="space-y-3">
+                <p className="text-xs text-[#666666]">
+                  AI가 대화 시 참고할 메모를 입력하세요.
+                  <br />
+                  다음 메시지부터 시스템 프롬프트에 반영됩니다.
+                </p>
+                <div className="relative">
+                  <textarea
+                    value={draftNote}
+                    onChange={(e) => setDraftNote(e.target.value)}
+                    onBlur={() => void saveUserNote()}
+                    maxLength={1000}
+                    rows={9}
+                    placeholder={"예: 오늘 유저는 기분이 안 좋음\n피곤하고 우울한 상태..."}
+                    className="w-full resize-none rounded-lg border border-[#E0E0E0] bg-white px-3 py-2 pb-6 text-sm outline-none focus:border-[#666666]"
+                  />
+                  <span className="pointer-events-none absolute bottom-2 right-2 text-[11px] text-[#999999]">
+                    {draftNote.length}/1000
+                  </span>
+                </div>
+                <div className="flex justify-end">
+                  <button
+                    type="button"
+                    onClick={() => void saveUserNote()}
+                    disabled={buttonDisabled}
+                    className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
+                      buttonDisabled
+                        ? "cursor-not-allowed bg-[#E8E8E8] text-[#999999]"
+                        : "bg-[#1A1A2E] text-white hover:bg-[#141424]"
+                    }`}
+                  >
+                    {buttonLabel}
+                  </button>
+                </div>
               </div>
-              <button
-                type="button"
-                onClick={handleNoteSave}
-                className="w-full rounded-lg bg-[#1A1A2E] py-2 text-xs font-medium text-white hover:bg-[#141424]"
-              >
-                {noteSaved ? "저장됨 ✓" : "저장"}
-              </button>
-              <p className="text-xs text-[#AAAAAA]">※ 서버에 저장되지 않으며 브라우저 로컬에 유지됩니다.</p>
-            </div>
-          )}
+            );
+          })()}
 
           {/* ── 커스텀 탭 ── */}
           {tab === "font" && (

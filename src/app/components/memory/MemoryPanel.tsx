@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import {
   DndContext,
   PointerSensor,
@@ -38,7 +38,22 @@ type Props = {
 
 const CORE_CONCEPT_MAX = 5;
 const TIMELINE_MAX = 80;
-const CIRCLE_NUMBERS = ["①", "②", "③", "④", "⑤", "⑥", "⑦", "⑧", "⑨", "⑩"];
+const parseStartTurn = (turnRange: string | null | undefined): number => {
+  if (!turnRange) return Number.MAX_SAFE_INTEGER;
+  const match = turnRange.match(/\d+/);
+  if (!match) {
+    console.warn('[MemoryPanel] turn_range 파싱 실패:', turnRange);
+    return Number.MAX_SAFE_INTEGER;
+  }
+  return Number(match[0]);
+};
+
+const getNumberMark = (index: number, total: number): string => {
+  if (total <= 20) {
+    return String.fromCodePoint(0x2460 + index);
+  }
+  return `${index + 1}.`;
+};
 
 function parseTurnStart(turnRange: string | null | undefined): number {
   if (!turnRange) return Infinity;
@@ -114,6 +129,16 @@ function PlusIcon() {
   );
 }
 
+function MoreHorizontalIcon() {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
+      <circle cx="4" cy="10" r="1.5" />
+      <circle cx="10" cy="10" r="1.5" />
+      <circle cx="16" cy="10" r="1.5" />
+    </svg>
+  );
+}
+
 function GripIcon() {
   return (
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-3.5 w-3.5">
@@ -163,10 +188,9 @@ function SortableTimelineItem({
   const titleText = parts.length >= 4 ? parts[2] : null;
   const eventContent = parts.length >= 4 ? parts.slice(3).join(" | ") : (parts[2] ?? m.content);
 
-  const turnLabel = turnRange ? turnRange.replace("-", "~") + "턴" : null;
+  void turnRange; // 정렬 키로만 사용, 화면 표시 안 함
   const metaParts = [
     rpDate && rpDate !== "알 수 없음" ? rpDate : null,
-    turnLabel,
   ].filter(Boolean);
   const metaLine = metaParts.join(" · ");
 
@@ -447,6 +471,21 @@ export function MemoryPanel({ conversationId, characterId, characterName, isOpen
   const [relationshipSaving, setRelationshipSaving] = useState(false);
   const [relationshipMemoryId, setRelationshipMemoryId] = useState<string | null>(null);
   const [relationshipToast, setRelationshipToast] = useState<string | null>(null);
+  const [editingCardIndex, setEditingCardIndex] = useState<number | null>(null);
+  const [editingCardSnapshot, setEditingCardSnapshot] = useState<RelationshipItem | null>(null);
+  const [openMenuIndex, setOpenMenuIndex] = useState<number | null>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (openMenuIndex === null) return;
+    function handleClickOutside(e: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setOpenMenuIndex(null);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [openMenuIndex]);
 
   const dndSensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -558,6 +597,7 @@ export function MemoryPanel({ conversationId, characterId, characterName, isOpen
         setTimeout(() => setRelationshipToast(null), 1500);
       }
     }
+    return ok;
   }, [conversationId, characterId, relationshipMemoryId, setMemories]);
 
   // ── API 액션 ────────────────────────────────────────────────────────────────
@@ -643,6 +683,9 @@ export function MemoryPanel({ conversationId, characterId, characterName, isOpen
   const timelines = timelineOrder
     .map((id) => timelineMap.get(id))
     .filter((m): m is Memory => m !== undefined);
+  const sortedTimelines = [...timelines].sort(
+    (a, b) => parseStartTurn(a.turn_range) - parseStartTurn(b.turn_range)
+  );
   const coreConceptFull = coreConcepts.length >= CORE_CONCEPT_MAX;
   const timelineFull = timelines.length >= TIMELINE_MAX;
 
@@ -820,13 +863,13 @@ export function MemoryPanel({ conversationId, characterId, characterName, isOpen
                   </div>
                 )}
 
-                {timelines.length === 0 && addingSection !== "timeline" ? (
+                {sortedTimelines.length === 0 && addingSection !== "timeline" ? (
                   <p className="mt-2 text-[11px] text-[#CCCCCC]">아직 기억이 없습니다.</p>
                 ) : (() => {
                     const PREVIEW = 5;
-                    const hasMore = timelines.length > PREVIEW;
-                    const visibleItems = timelineExpanded ? timelines : timelines.slice(0, PREVIEW);
-                    const hiddenCount = timelines.length - PREVIEW;
+                    const hasMore = sortedTimelines.length > PREVIEW;
+                    const visibleItems = timelineExpanded ? sortedTimelines : sortedTimelines.slice(0, PREVIEW);
+                    const hiddenCount = sortedTimelines.length - PREVIEW;
 
                     return (
                       <DndContext
@@ -841,10 +884,8 @@ export function MemoryPanel({ conversationId, characterId, characterName, isOpen
                             {visibleItems.map((m, visIdx) => {
                               const globalIdx = timelineExpanded
                                 ? visIdx
-                                : timelines.length - PREVIEW + visIdx < 0
-                                  ? visIdx
-                                  : timelines.indexOf(m);
-                              const circle = CIRCLE_NUMBERS[globalIdx] ?? `(${globalIdx + 1})`;
+                                : sortedTimelines.indexOf(m);
+                              const circle = getNumberMark(globalIdx, sortedTimelines.length);
                               return (
                                 <SortableTimelineItem
                                   key={m.id}
@@ -891,19 +932,13 @@ export function MemoryPanel({ conversationId, characterId, characterName, isOpen
                       onClick={() => {
                         const next = [...relationshipItems, { character_name: "", emotion: "", relationship: "" }];
                         setRelationshipItems(next);
+                        setEditingCardIndex(next.length - 1);
+                        setEditingCardSnapshot(null);
                       }}
                       className="flex items-center gap-0.5 rounded-lg border border-[#D0D0D0] px-2 py-0.5 text-[11px] text-[#888888] hover:bg-[#F5F5F5]"
                     >
                       <PlusIcon />
                       <span>캐릭터 추가</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => void saveRelationshipItems(relationshipItems, { toast: true })}
-                      disabled={relationshipSaving}
-                      className="rounded-lg border border-[#1A1A2E] bg-[#1A1A2E] px-2 py-0.5 text-[11px] text-white hover:bg-[#2A2A3E] disabled:opacity-50"
-                    >
-                      전체 저장
                     </button>
                   </div>
                 </div>
@@ -920,9 +955,74 @@ export function MemoryPanel({ conversationId, characterId, characterName, isOpen
                     {relationshipItems.map((item, idx) => {
                       const fieldCls = "w-full rounded-lg border border-[#D0D0D0] bg-white px-2.5 py-1.5 text-xs text-[#1A1A1A] placeholder-[#BBBBBB] outline-none focus:border-[#1A1A2E]";
                       const labelCls = "w-[7.5rem] shrink-0 text-[11px] text-[#AAAAAA]";
+                      const isEditing = editingCardIndex === idx;
 
                       function updateField(field: keyof RelationshipItem, value: string) {
                         setRelationshipItems((prev) => prev.map((it, i) => i === idx ? { ...it, [field]: value } : it));
+                      }
+
+                      if (!isEditing) {
+                        const rowCls = "flex items-center gap-3";
+                        const labelCls = "w-28 shrink-0 text-right text-[11px] text-[#888888]";
+                        const valueCls = "text-xs font-medium text-[#1A1A1A] break-words";
+                        const menuOpen = openMenuIndex === idx;
+                        return (
+                          <div key={idx} className="relative rounded-lg border border-[#E8E8E8] bg-[#F8F8F8] p-3 pr-8">
+                            <div className="space-y-1">
+                              <div className={rowCls}>
+                                <span className={labelCls}>캐릭터 이름</span>
+                                <span className={valueCls}>{item.character_name || "(이름 없음)"}</span>
+                              </div>
+                              <div className={rowCls}>
+                                <span className={labelCls}>유저를 향한 감정</span>
+                                <span className={valueCls}>{item.emotion || "-"}</span>
+                              </div>
+                              <div className={rowCls}>
+                                <span className={labelCls}>캐릭터와 유저의 사이</span>
+                                <span className={valueCls}>{item.relationship || "-"}</span>
+                              </div>
+                            </div>
+                            <div ref={menuOpen ? menuRef : undefined} className="absolute top-2 right-2">
+                              <button
+                                type="button"
+                                onClick={() => setOpenMenuIndex(menuOpen ? null : idx)}
+                                className="flex h-6 w-6 items-center justify-center rounded text-[#888888] hover:bg-[#EBEBEB] hover:text-[#555555]"
+                                title="메뉴"
+                              >
+                                <MoreHorizontalIcon />
+                              </button>
+                              {menuOpen && (
+                                <div className="absolute right-0 mt-1 w-24 overflow-hidden rounded-lg border border-[#E0E0E0] bg-white shadow-md z-10">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setOpenMenuIndex(null);
+                                      setEditingCardIndex(idx);
+                                      setEditingCardSnapshot({ ...item });
+                                    }}
+                                    className="block w-full px-3 py-2 text-left text-xs text-[#1A1A1A] hover:bg-[#F5F5F5]"
+                                  >
+                                    편집
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setOpenMenuIndex(null);
+                                      const next = relationshipItems.filter((_, i) => i !== idx);
+                                      setRelationshipItems(next);
+                                      setEditingCardIndex(null);
+                                      setEditingCardSnapshot(null);
+                                      void saveRelationshipItems(next);
+                                    }}
+                                    className="block w-full px-3 py-2 text-left text-xs text-red-600 hover:bg-red-50"
+                                  >
+                                    삭제
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        );
                       }
 
                       return (
@@ -945,17 +1045,41 @@ export function MemoryPanel({ conversationId, characterId, characterName, isOpen
                           <div className="flex justify-end gap-2">
                             <button
                               type="button"
-                              onClick={() => void saveRelationshipItems(relationshipItems, { toast: true })}
+                              onClick={async () => {
+                                const ok = await saveRelationshipItems(relationshipItems, { toast: true });
+                                if (ok) {
+                                  setEditingCardIndex(null);
+                                  setEditingCardSnapshot(null);
+                                }
+                              }}
                               disabled={relationshipSaving}
-                              className="rounded-lg border border-[#1A1A2E] px-2 py-0.5 text-[11px] text-[#1A1A2E] hover:bg-[#F0F0F5] disabled:opacity-50"
+                              className="rounded-lg border border-[#1A1A2E] bg-[#1A1A2E] px-2 py-0.5 text-[11px] text-white hover:bg-[#2A2A3E] disabled:opacity-50"
                             >
                               저장
                             </button>
                             <button
                               type="button"
                               onClick={() => {
+                                if (editingCardSnapshot) {
+                                  setRelationshipItems((prev) => prev.map((it, i) => i === idx ? editingCardSnapshot : it));
+                                } else {
+                                  // 새로 추가된 카드 취소 → 제거
+                                  setRelationshipItems((prev) => prev.filter((_, i) => i !== idx));
+                                }
+                                setEditingCardIndex(null);
+                                setEditingCardSnapshot(null);
+                              }}
+                              className="rounded-lg border border-[#D0D0D0] px-2 py-0.5 text-[11px] text-[#888888] hover:bg-[#F5F5F5]"
+                            >
+                              취소
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
                                 const next = relationshipItems.filter((_, i) => i !== idx);
                                 setRelationshipItems(next);
+                                setEditingCardIndex(null);
+                                setEditingCardSnapshot(null);
                                 void saveRelationshipItems(next);
                               }}
                               className="rounded-lg px-2 py-0.5 text-[11px] text-[#AAAAAA] hover:bg-red-50 hover:text-red-500"

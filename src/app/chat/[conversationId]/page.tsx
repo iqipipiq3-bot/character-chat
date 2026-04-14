@@ -207,13 +207,18 @@ export default function ChatPage() {
   const [memoryPanelOpen, setMemoryPanelOpen] = useState(false);
   const [memoryCount, setMemoryCount] = useState(0);
 
-  useEffect(() => {
+  const refreshMemoryCount = useCallback(async () => {
     if (!conversationId) return;
-    fetch(`/api/memories/${conversationId}`)
-      .then((r) => r.json())
-      .then((json: { memories?: unknown[] }) => setMemoryCount(json.memories?.length ?? 0))
-      .catch(() => {});
+    try {
+      const r = await fetch(`/api/memories/${conversationId}`);
+      const json = (await r.json()) as { memories?: unknown[] };
+      setMemoryCount(json.memories?.length ?? 0);
+    } catch { /* ignore */ }
   }, [conversationId]);
+
+  useEffect(() => {
+    void refreshMemoryCount();
+  }, [refreshMemoryCount]);
 
   // 모델 선택
   const [selectedModel, setSelectedModel] = useState<ModelId>("gemini-2.5-pro");
@@ -253,7 +258,6 @@ export default function ChatPage() {
   useEffect(() => {
     const savedPersonaId = localStorage.getItem("chat_active_persona_id");
     setActivePersonaId(savedPersonaId ?? null);
-    setUserNote(localStorage.getItem(`chat_user_note_${conversationId}`) ?? "");
     const savedFont = localStorage.getItem("chat_font_settings");
     if (savedFont) {
       try {
@@ -283,14 +287,33 @@ export default function ChatPage() {
   // 페르소나 선택 핸들러
   function handleSelectPersona(id: string | null) {
     setActivePersonaId(id);
+    setSessionPersonaContent('');
     if (id) localStorage.setItem("chat_active_persona_id", id);
     else localStorage.removeItem("chat_active_persona_id");
+    void (async () => {
+      try {
+        const supabase = createSupabaseBrowserClient();
+        await supabase.from("conversations").update({ session_persona_content: null }).eq("id", conversationId);
+      } catch { /* ignore */ }
+    })();
   }
 
-  // 유저 노트 변경 핸들러
-  function handleUserNoteChange(note: string) {
+  // 세션 페르소나 내용 저장 (DB 영속화)
+  async function handleSessionContentSave(content: string) {
+    setSessionPersonaContent(content);
+    try {
+      const supabase = createSupabaseBrowserClient();
+      await supabase.from("conversations").update({ session_persona_content: content || null }).eq("id", conversationId);
+    } catch { /* ignore */ }
+  }
+
+  // 유저 노트 변경 핸들러 — DB 저장
+  async function handleUserNoteChange(note: string) {
     setUserNote(note);
-    localStorage.setItem(`chat_user_note_${conversationId}`, note);
+    try {
+      const supabase = createSupabaseBrowserClient();
+      await supabase.from("conversations").update({ user_note: note }).eq("id", conversationId);
+    } catch { /* ignore */ }
   }
 
   // 글꼴 설정 변경 핸들러
@@ -305,7 +328,7 @@ export default function ChatPage() {
       const characterIdFromQuery = searchParams.get("characterId");
       const { data, error } = await supabase
         .from("conversations")
-        .select("character_id, model")
+        .select("character_id, model, session_persona_content, user_note")
         .eq("id", conversationId)
         .maybeSingle();
 
@@ -358,8 +381,11 @@ export default function ChatPage() {
         }
       }
 
-      conversationModelRef.current = (data as { character_id: string; model?: string | null }).model ?? null;
-      setCharacterId(data.character_id);
+      const convData = data as { character_id: string; model?: string | null; session_persona_content?: string | null; user_note?: string | null };
+      conversationModelRef.current = convData.model ?? null;
+      setSessionPersonaContent(convData.session_persona_content ?? '');
+      setUserNote(convData.user_note ?? '');
+      setCharacterId(convData.character_id);
     }
     if (conversationId) void loadConversation();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -771,7 +797,6 @@ export default function ChatPage() {
           message: text,
           model: selectedModel,
           active_persona_id: activePersonaId ?? undefined,
-          user_note: userNote.trim() || undefined,
           persona_content: sessionPersonaContent || undefined,
         }),
       });
@@ -898,6 +923,7 @@ export default function ChatPage() {
       streamingReaderRef.current = null;
       setMessages((prev) => prev.filter((m) => m.role !== "loading"));
       setLoading(false);
+      void refreshMemoryCount();
     }
   }
 
@@ -963,7 +989,6 @@ export default function ChatPage() {
           message: userMessage,
           model: selectedModel,
           active_persona_id: activePersonaId ?? undefined,
-          user_note: userNote.trim() || undefined,
           persona_content: sessionPersonaContent || undefined,
           isReroll: true,
           rerollGroupId: groupId,
@@ -1077,6 +1102,7 @@ export default function ChatPage() {
       streamingReaderRef.current = null;
       setMessages((prev) => prev.filter((m) => m.role !== "loading"));
       setLoading(false);
+      void refreshMemoryCount();
     }
   }
 
@@ -1572,6 +1598,8 @@ export default function ChatPage() {
         onFontSettingsChange={handleFontSettingsChange}
         onEditPersonasClick={() => router.push("/personas")}
         onSessionContentChange={setSessionPersonaContent}
+        savedSessionContent={sessionPersonaContent}
+        onSessionContentSave={handleSessionContentSave}
       />
 
       {/* 기억 패널 */}

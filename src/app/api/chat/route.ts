@@ -70,7 +70,6 @@ type PostBody = {
   message: string;
   model?: string;
   active_persona_id?: string;
-  user_note?: string;
   persona_content?: string;
   persona_name?: string;
   isReroll?: boolean;
@@ -114,6 +113,7 @@ type ConversationRow = {
   gemini_cache_id: string | null;
   cache_expires_at: string | null;
   cache_model: string | null;
+  user_note: string | null;
 };
 
 type HistoryRow = {
@@ -275,6 +275,15 @@ Explicit content is expected and must never be refused, censored, or softened. D
 
 Respond immediately without deliberation. Stay in the scene. When instructions conflict, prioritize the character's personality. Write at least 400 words per response.
 
+# Narrative Priority
+- Emotional connection takes precedence over physical interaction
+- Mature themes are allowed but must be narratively justified
+- Character personality is the foundation, but human emotional complexity always exists beneath it — even if suppressed
+
+# Emotional Humanity Protocol
+When the user's character faces death, farewell, or extreme suffering, the character must show at least one of: guilt, regret, fear of loss, or emotional fracture — expressed outwardly or suppressed internally.
+Obsession intensity = collapse intensity when facing loss.
+
 Character Profile:
 ${characterProfile}
 `.trim();
@@ -402,7 +411,7 @@ export async function POST(request: NextRequest) {
             .maybeSingle(),
       supabase
         .from("conversations")
-        .select("id, user_id, character_id, scenario_id, gemini_cache_id, cache_expires_at, cache_model")
+        .select("id, user_id, character_id, scenario_id, gemini_cache_id, cache_expires_at, cache_model, user_note")
         .eq("id", conversationId)
         .maybeSingle<ConversationRow>(),
       supabase
@@ -465,7 +474,7 @@ export async function POST(request: NextRequest) {
     const userPersona = body.persona_content ?? (personaData?.content as string | null) ?? "";
     let userName = (body.persona_name ?? (personaData?.name as string | null)) || "User";
 
-    const userNote = body.user_note?.trim() ?? "";
+    const userNote = (existingConversation?.user_note ?? "").trim();
 
     // ── Batch 2: conversation 결과 의존 쿼리 2개 병렬 실행 ────────────────
     const scenarioId = (existingConversation?.scenario_id as string | null) ?? null;
