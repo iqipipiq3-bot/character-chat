@@ -254,10 +254,8 @@ export default function ChatPage() {
     [emComponent]
   );
 
-  // localStorage 초기화 (페르소나·노트·폰트)
+  // localStorage 초기화 (폰트) — 페르소나는 conversations.persona_id에서 로드
   useEffect(() => {
-    const savedPersonaId = localStorage.getItem("chat_active_persona_id");
-    setActivePersonaId(savedPersonaId ?? null);
     const savedFont = localStorage.getItem("chat_font_settings");
     if (savedFont) {
       try {
@@ -288,12 +286,13 @@ export default function ChatPage() {
   function handleSelectPersona(id: string | null) {
     setActivePersonaId(id);
     setSessionPersonaContent('');
-    if (id) localStorage.setItem("chat_active_persona_id", id);
-    else localStorage.removeItem("chat_active_persona_id");
     void (async () => {
       try {
         const supabase = createSupabaseBrowserClient();
-        await supabase.from("conversations").update({ session_persona_content: null }).eq("id", conversationId);
+        await supabase
+          .from("conversations")
+          .update({ persona_id: id, session_persona_content: null })
+          .eq("id", conversationId);
       } catch { /* ignore */ }
     })();
   }
@@ -328,7 +327,7 @@ export default function ChatPage() {
       const characterIdFromQuery = searchParams.get("characterId");
       const { data, error } = await supabase
         .from("conversations")
-        .select("character_id, model, session_persona_content, user_note")
+        .select("character_id, model, session_persona_content, user_note, persona_id")
         .eq("id", conversationId)
         .maybeSingle();
 
@@ -381,10 +380,11 @@ export default function ChatPage() {
         }
       }
 
-      const convData = data as { character_id: string; model?: string | null; session_persona_content?: string | null; user_note?: string | null };
+      const convData = data as { character_id: string; model?: string | null; session_persona_content?: string | null; user_note?: string | null; persona_id?: string | null };
       conversationModelRef.current = convData.model ?? null;
       setSessionPersonaContent(convData.session_persona_content ?? '');
       setUserNote(convData.user_note ?? '');
+      setActivePersonaId(convData.persona_id ?? null);
       setCharacterId(convData.character_id);
     }
     if (conversationId) void loadConversation();
