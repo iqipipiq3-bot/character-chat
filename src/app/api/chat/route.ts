@@ -233,22 +233,12 @@ If nothing is worth extracting, output an empty array: []
    - turn_range: Use the turn range provided in the request (e.g. "1-5").
    - importance: 4 or 5
 
-3. relationship (관계도)
-   - Extract at most 1 entry.
-   - SKIP if the relationship or emotional dynamic has not meaningfully changed since the previous turn.
-   - content format (Korean, use exactly this 4-line structure):
-     "character_name: [캐릭터 이름]
-캐릭터는 유저에게: [캐릭터가 유저에게 어떤 존재인지 한 줄]
-유저는 캐릭터에게: [유저가 캐릭터에게 어떤 존재인지 한 줄]
-유저를 향한 감정: [캐릭터가 유저에게 느끼는 감정 한 줄]"
-   - character_name은 반드시 대화 속 캐릭터 이름으로 채울 것. 절대 빈값이나 "—"로 두지 말 것.
-   - importance: 3, 4, or 5
-
 === OUTPUT FORMAT ===
 Each item: { type, content (Korean), importance, rp_date? (timeline only), turn_range? (timeline only) }
+Only "core_concept" and "timeline" are valid types. NEVER output "relationship" — it is managed exclusively by the user.
 
 Example:
-[{"type":"core_concept","content":"배경은 19세기 귀족 사회이며, 캐릭터는 공작 가문의 장남이다.","importance":5},{"type":"timeline","content":"1-5 | 알 수 없음 | 두 사람이 처음 만나 긴장감 속에 대화를 나눴다.","importance":4,"rp_date":"알 수 없음","turn_range":"1-5"},{"type":"relationship","content":"유저와의 관계: 처음 만난 사이로 서로를 탐색 중\n유저를 향한 감정: 경계심 속에 묘한 흥미를 느낌","importance":4}]`;
+[{"type":"core_concept","content":"배경은 19세기 귀족 사회이며, 캐릭터는 공작 가문의 장남이다.","importance":5},{"type":"timeline","content":"1-5 | 알 수 없음 | 두 사람이 처음 만나 긴장감 속에 대화를 나눴다.","importance":4,"rp_date":"알 수 없음","turn_range":"1-5"}]`;
 
 function buildBulletList(items: Array<string | null | undefined>) {
   return items
@@ -1014,19 +1004,10 @@ export async function POST(request: NextRequest) {
                     // JSON 파싱 실패 시 무시
                   }
 
-                  const VALID_TYPES = ["core_concept", "timeline", "relationship"];
+                  const VALID_TYPES = ["core_concept", "timeline"];
                   const filtered = extractedMemories.filter((m) => VALID_TYPES.includes(m.type));
 
                   if (filtered.length > 0) {
-                    if (filtered.some((m) => m.type === "relationship")) {
-                      await supabase
-                        .from("conversation_memories")
-                        .update({ is_active: false })
-                        .eq("conversation_id", conversationId)
-                        .eq("memory_type", "relationship")
-                        .eq("is_active", true);
-                    }
-
                     await Promise.all(
                       filtered.map((m) =>
                         supabase.from("conversation_memories").insert({
