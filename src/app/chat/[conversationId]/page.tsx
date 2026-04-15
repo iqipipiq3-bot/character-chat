@@ -1511,7 +1511,7 @@ export default function ChatPage() {
 
         <form
           onSubmit={handleSend}
-          className="fixed bottom-0 left-0 right-0 z-40 px-3 pb-2 pt-2 md:px-4 md:pb-3 md:pt-2"
+          className={`fixed bottom-0 left-0 right-0 z-40 px-3 pb-2 pt-2 md:px-4 md:pb-3 md:pt-2 ${editId ? "hidden md:block" : ""}`}
           style={{ backgroundColor: fontSettings.chatBg || "#F8F8F8", paddingBottom: "max(0.5rem, env(safe-area-inset-bottom))" }}
         >
           <div className="mx-auto w-full max-w-4xl">
