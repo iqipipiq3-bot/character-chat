@@ -74,15 +74,20 @@ export function HeaderClient({ displayName, isLoggedIn, avatarUrl, userId, follo
   return (
     <div className="flex h-full w-full items-center gap-2 px-4 sm:gap-3 sm:px-6">
       {/* 로고 */}
-      <Link
-        href="/explore"
-        className="shrink-0 text-sm font-bold tracking-tight"
-      >
-        CC
+      <Link href="/explore" className="flex shrink-0 items-center gap-1.5" aria-label="홈">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src="/icons/launchericon-192x192.png"
+          alt="로고"
+          width={32}
+          height={32}
+          style={{ borderRadius: "8px" }}
+        />
+        <span className="text-lg font-bold tracking-tight text-gray-900 dark:text-white">CUBE</span>
       </Link>
 
       {/* 헤더 탭 (데스크탑만) */}
-      <nav className="hidden md:flex items-center gap-1 shrink-0">
+      <nav className="hidden md:flex items-center gap-1 shrink-0 ml-6">
         {[
           { href: "/explore", label: "공개 캐릭터" },
           { href: "/dashboard", label: "제작 스튜디오" },
