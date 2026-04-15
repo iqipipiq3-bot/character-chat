@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { CharacterCardsClient } from "./CharacterCardsClient";
 import { createSupabaseBrowserClient } from "../lib/supabase";
+import { showToast } from "../components/Toast";
 
 type Character = {
   id: string;
@@ -135,16 +136,29 @@ export function DashboardTabsClient({ characters }: DashboardTabsClientProps) {
     setAddSaving(true);
     const supabase = createSupabaseBrowserClient();
     const { data: { user } } = await supabase.auth.getUser();
-    if (!user) { setAddSaving(false); return; }
-    await supabase.from("prompt_templates").insert({
-      user_id: user.id,
-      title: addTitle.trim(),
-      content: addContent.trim(),
-    });
+    if (!user) {
+      setAddSaving(false);
+      showToast("로그인이 필요합니다.", "error");
+      return;
+    }
+    const { error } = await supabase
+      .from("prompt_templates")
+      .insert({
+        user_id: user.id,
+        title: addTitle.trim(),
+        content: addContent.trim(),
+      })
+      .select("id")
+      .single();
+    setAddSaving(false);
+    if (error) {
+      showToast(`저장 실패: ${error.message}`, "error");
+      return;
+    }
     setAddTitle("");
     setAddContent("");
     setShowAddForm(false);
-    setAddSaving(false);
+    showToast("템플릿을 추가했습니다.");
     await loadTemplates();
   }
 
@@ -152,12 +166,29 @@ export function DashboardTabsClient({ characters }: DashboardTabsClientProps) {
     if (!editingId || !editTitle.trim() || !editContent.trim()) return;
     setEditSaving(true);
     const supabase = createSupabaseBrowserClient();
-    await supabase
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      setEditSaving(false);
+      showToast("로그인이 필요합니다.", "error");
+      return;
+    }
+    const { data, error } = await supabase
       .from("prompt_templates")
       .update({ title: editTitle.trim(), content: editContent.trim() })
-      .eq("id", editingId);
-    setEditingId(null);
+      .eq("id", editingId)
+      .eq("user_id", user.id)
+      .select("id, title, content");
     setEditSaving(false);
+    if (error) {
+      showToast(`저장 실패: ${error.message}`, "error");
+      return;
+    }
+    if (!data || data.length === 0) {
+      showToast("저장 실패: 권한이 없거나 템플릿을 찾을 수 없습니다.", "error");
+      return;
+    }
+    setEditingId(null);
+    showToast("템플릿을 저장했습니다.");
     await loadTemplates();
   }
 
@@ -165,8 +196,13 @@ export function DashboardTabsClient({ characters }: DashboardTabsClientProps) {
     const ok = window.confirm("템플릿을 삭제하시겠습니까?");
     if (!ok) return;
     const supabase = createSupabaseBrowserClient();
-    await supabase.from("prompt_templates").delete().eq("id", id);
+    const { error } = await supabase.from("prompt_templates").delete().eq("id", id);
+    if (error) {
+      showToast(`삭제 실패: ${error.message}`, "error");
+      return;
+    }
     setTemplates((prev) => prev.filter((t) => t.id !== id));
+    showToast("템플릿을 삭제했습니다.");
   }
 
   function startEdit(t: PromptTemplate) {
@@ -224,11 +260,15 @@ export function DashboardTabsClient({ characters }: DashboardTabsClientProps) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ title: loreEditTitle, keywords: loreEditKeywords, content: loreEditContent }),
     });
+    setLoreEditSaving(false);
     if (res.ok) {
       setLoreEditingId(null);
+      showToast("로어북 템플릿을 저장했습니다.");
       await loadLoreTemplates();
+    } else {
+      const err = (await res.json().catch(() => ({}))) as { error?: string };
+      showToast(`저장 실패: ${err.error ?? res.statusText}`, "error");
     }
-    setLoreEditSaving(false);
   }
 
   async function handleLoreDelete(id: string) {

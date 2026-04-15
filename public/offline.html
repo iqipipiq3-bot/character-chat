@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>오프라인 - 캐릭터 챗</title>
+    <meta name="theme-color" content="#000000" />
+    <style>
+      html, body {
+        margin: 0;
+        padding: 0;
+        height: 100%;
+        background: #000;
+        color: #fff;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+        -webkit-font-smoothing: antialiased;
+      }
+      .wrap {
+        min-height: 100%;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        text-align: center;
+        padding: 24px;
+        gap: 20px;
+      }
+      .emoji { font-size: 56px; }
+      h1 { font-size: 20px; font-weight: 600; margin: 0; }
+      p { font-size: 14px; color: #a1a1aa; margin: 0; line-height: 1.6; }
+      button {
+        margin-top: 8px;
+        background: #fff;
+        color: #000;
+        border: none;
+        border-radius: 10px;
+        padding: 10px 20px;
+        font-size: 14px;
+        font-weight: 500;
+        cursor: pointer;
+      }
+      button:hover { background: #e5e5e5; }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <div class="emoji">📡</div>
+      <h1>오프라인 상태입니다</h1>
+      <p>인터넷 연결을 확인해주세요.</p>
+      <button type="button" onclick="location.reload()">다시 시도</button>
+    </div>
+  </body>
+</html>

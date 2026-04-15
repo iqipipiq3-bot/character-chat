@@ -7,6 +7,7 @@ import { ConversationSidebar } from "./ConversationSidebar";
 import { HeaderShell, HeaderPadding } from "./HeaderShell";
 import { BottomNav } from "./BottomNav";
 import { ToastContainer } from "./components/Toast";
+import { PushSubscriber } from "./components/PushSubscriber";
 import { HeaderProvider } from "./context/HeaderContext";
 
 const geistSans = Geist({
@@ -105,6 +106,12 @@ export default async function RootLayout({
   return (
     <html lang="ko" suppressHydrationWarning>
       <head>
+        <link rel="manifest" href="/manifest.json" />
+        <meta name="theme-color" content="#000000" />
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+        <meta name="apple-mobile-web-app-title" content="캐릭터 챗" />
+        <link rel="apple-touch-icon" href="/icons/launchericon-192x192.png" />
         <script dangerouslySetInnerHTML={{ __html: `
           (function(){
             try {
@@ -132,6 +139,7 @@ export default async function RootLayout({
             followingCount={followingCount}
           />
           <ToastContainer />
+          <PushSubscriber isLoggedIn={!!user} />
           {/* 고정 사이드바 — /explore, /dashboard에서만 표시 */}
           <ConversationSidebar />
           {/* 모바일 하단 탭바 */}

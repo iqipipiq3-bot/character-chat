@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { cookies } from "next/headers";
 import { createServerClient } from "@supabase/ssr";
+import { sendPushToUser } from "../../lib/push";
 
 function getSupabaseEnv() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -95,6 +96,19 @@ export async function POST(request: NextRequest) {
         is_read: false,
       }));
       await supabase.from("notifications").insert(rows);
+
+      // 푸시 알림 발송 (실패해도 응답에 영향 없음)
+      const payload = {
+        title: "새 공지사항",
+        body: notice.title as string,
+        url: "/notifications?tab=notices",
+        tag: `notice-${notice.id}`,
+      };
+      await Promise.all(
+        userIds.map((uid) =>
+          sendPushToUser(supabase, uid, payload).catch(() => { /* ignore */ })
+        )
+      );
     }
 
     return NextResponse.json({ notice });
