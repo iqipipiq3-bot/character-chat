@@ -32,7 +32,10 @@
       "Bash(taskkill:*)",
       "Bash(echo \"EXIT_CODE: $?\")",
       "Bash(echo \"EXIT: $?\")",
-      "Bash(npm ls:*)"
+      "Bash(npm ls:*)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git push *)"
     ]
   }
 }

@@ -1,3 +1,24 @@
+import { NextResponse } from "next/server";
+
+// ── 임시 비활성화: 출석 기능 점검 중 ──
+// 기존 로직 전체는 파일 하단에 주석으로 보존
+
+export async function GET() {
+  return NextResponse.json(
+    { error: '출석 기능이 잠시 점검 중입니다.' },
+    { status: 503 }
+  );
+}
+
+export async function POST() {
+  return NextResponse.json(
+    { error: '출석 기능이 잠시 점검 중입니다.' },
+    { status: 503 }
+  );
+}
+
+// ── 기존 코드 (복구 시 위 임시 핸들러 삭제 후 아래 주석 해제) ──
+/*
 import { NextResponse, type NextRequest } from "next/server";
 import { cookies } from "next/headers";
 import { createServerClient } from "@supabase/ssr";
@@ -73,13 +94,6 @@ export async function GET(request: NextRequest) {
 
 // POST /api/attendance
 export async function POST(_request: NextRequest) {
-  // ── 임시 비활성화: 출석 기능 점검 중 ──
-  return NextResponse.json(
-    { error: '출석 기능이 잠시 점검 중입니다. 곧 재개됩니다.' },
-    { status: 503 }
-  );
-  // ── 임시 비활성화 끝 ──
-
   try {
     const today = getKSTDateString();
     console.log("[attendance POST] 시작. today =", today);
@@ -93,7 +107,8 @@ export async function POST(_request: NextRequest) {
         setAll(cookiesToSet) {
           try {
             cookiesToSet.forEach(({ name, value, options }) => cookieStore.set(name, value, options));
-          } catch { /* route handler에서 쿠키 설정 실패는 무시 */ }
+          } catch { // route handler에서 쿠키 설정 실패는 무시
+          }
         },
       },
     });
@@ -103,7 +118,7 @@ export async function POST(_request: NextRequest) {
       console.error("[attendance POST] 인증 실패:", userError?.message);
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
-    console.log("[attendance POST] 인증 성공. user.id =", user?.id);
+    console.log("[attendance POST] 인증 성공. user.id =", user.id);
 
     // 이미 오늘 출석했는지 확인
     const { data: existing, error: existingErr } = await supabase
@@ -189,3 +204,4 @@ export async function POST(_request: NextRequest) {
     return NextResponse.json({ error: err instanceof Error ? err.message : "Unknown error" }, { status: 500 });
   }
 }
+*/
