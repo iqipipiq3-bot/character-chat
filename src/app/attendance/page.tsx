@@ -1,3 +1,21 @@
+// ── 임시 비활성화: 출석 기능 점검 중 ──
+// import { cookies } from "next/headers";
+// import { redirect } from "next/navigation";
+// import { createServerClient } from "@supabase/ssr";
+// import { AttendanceClient } from "./AttendanceClient";
+
+export default function AttendancePage() {
+  return (
+    <div className="flex flex-col items-center justify-center min-h-[60vh] text-center p-8">
+      <h1 className="text-2xl font-bold mb-4">출석 기능 점검 중</h1>
+      <p className="text-gray-500">출석 기능이 잠시 점검 중입니다.</p>
+      <p className="text-gray-500">곧 재개될 예정이니 조금만 기다려 주세요.</p>
+    </div>
+  );
+}
+
+// ── 기존 코드 (복구 시 위 임시 코드 삭제 후 아래 주석 해제) ──
+/*
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { createServerClient } from "@supabase/ssr";
@@ -25,7 +43,7 @@ export default async function AttendancePage() {
       setAll(cookiesToSet) {
         try {
           cookiesToSet.forEach(({ name, value, options }) => cookieStore.set(name, value, options));
-        } catch { /* ignore */ }
+        } catch {}
       },
     },
   });
@@ -40,7 +58,6 @@ export default async function AttendancePage() {
   const monthStart = `${month}-01`;
   const monthEnd = `${month}-${String(lastDay).padStart(2, "0")}`;
 
-  // 이번 달 출석 데이터
   const { data: checkins } = await supabase
     .from("daily_checkins")
     .select("checked_date")
@@ -51,7 +68,6 @@ export default async function AttendancePage() {
   const checkinDates = (checkins ?? []).map((c) => c.checked_date as string);
   const checkedInToday = checkinDates.includes(today);
 
-  // 연속 출석 계산을 위해 최근 62일 데이터 조회
   const streakFrom = new Date(today);
   streakFrom.setDate(streakFrom.getDate() - 62);
   const streakFromStr = streakFrom.toISOString().split("T")[0]!;
@@ -84,3 +100,4 @@ export default async function AttendancePage() {
     />
   );
 }
+*/

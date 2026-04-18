@@ -186,8 +186,8 @@ export function HeaderClient({ displayName, isLoggedIn, avatarUrl, userId, follo
           </svg>
         </button>
 
-        {/* 출석 아이콘 (로그인 시만, 모바일) */}
-        {isLoggedIn && (
+        {/* 출석 아이콘 (로그인 시만, 모바일) — 임시 비활성화 */}
+        {/* {isLoggedIn && (
           <Link
             href="/attendance"
             className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-900"
@@ -200,7 +200,7 @@ export function HeaderClient({ displayName, isLoggedIn, avatarUrl, userId, follo
               <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-red-500" />
             )}
           </Link>
-        )}
+        )} */}
 
         {/* 알림(공지) 아이콘 (모바일) */}
         <Link
@@ -243,8 +243,8 @@ export function HeaderClient({ displayName, isLoggedIn, avatarUrl, userId, follo
         )}
       </div>
 
-      {/* 출석 아이콘 (데스크탑) */}
-      {isLoggedIn && (
+      {/* 출석 아이콘 (데스크탑) — 임시 비활성화 */}
+      {/* {isLoggedIn && (
         <Link
           href="/attendance"
           className="relative hidden md:flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-900"
@@ -257,7 +257,7 @@ export function HeaderClient({ displayName, isLoggedIn, avatarUrl, userId, follo
             <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-red-500" />
           )}
         </Link>
-      )}
+      )} */}
 
       {/* 알림 버튼 (데스크탑) */}
       <Link

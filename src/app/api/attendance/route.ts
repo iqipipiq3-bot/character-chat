@@ -73,6 +73,13 @@ export async function GET(request: NextRequest) {
 
 // POST /api/attendance
 export async function POST(_request: NextRequest) {
+  // ── 임시 비활성화: 출석 기능 점검 중 ──
+  return NextResponse.json(
+    { error: '출석 기능이 잠시 점검 중입니다. 곧 재개됩니다.' },
+    { status: 503 }
+  );
+  // ── 임시 비활성화 끝 ──
+
   try {
     const today = getKSTDateString();
     console.log("[attendance POST] 시작. today =", today);

@@ -640,8 +640,8 @@ export async function POST(request: NextRequest) {
     // 페르소나 / 로어북 / 장기기억 — 캐시 여부 무관하게 항상 마지막 user 메시지 앞에 주입
     {
       const contextPrefix: string[] = [];
-      if (userPersona) contextPrefix.push(`User Persona: ${userPersona}`);
-      if (userNote) contextPrefix.push(`User Note: ${userNote}`);
+      if (userPersona) contextPrefix.push(`[User Persona]\nThe following describes the user's character.\nKeep this information in mind for consistency, and reference it when the user's speech or actions relate to it, or when the scene organically involves these details.\n\n${userPersona}\n\n[End of User Persona]`);
+      if (userNote) contextPrefix.push(`[User Note]\nThe following is information the user wants the AI to remember throughout the session.\nKeep this information consistently in mind, and naturally reflect it when the situation organically calls for it or when the user brings up related topics.\n\n${userNote}\n\n[End of User Note]`);
       if (matchingLorebooks.length > 0) {
         contextPrefix.push(
           `Active Lorebook:\n${matchingLorebooks.map((e) => `- ${e}`).join("\n")}`
