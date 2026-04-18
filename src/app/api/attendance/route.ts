@@ -103,7 +103,7 @@ export async function POST(_request: NextRequest) {
       console.error("[attendance POST] 인증 실패:", userError?.message);
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
-    console.log("[attendance POST] 인증 성공. user.id =", user.id);
+    console.log("[attendance POST] 인증 성공. user.id =", user?.id);
 
     // 이미 오늘 출석했는지 확인
     const { data: existing, error: existingErr } = await supabase
